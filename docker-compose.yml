@@ -1,0 +1,24 @@
+# Run Agora locally with Docker:
+#   docker compose up -d --build
+# then open http://localhost:3000 and follow the setup wizard.
+services:
+  agora:
+    build: .
+    image: agora:latest
+    container_name: agora
+    ports:
+      - "3000:3000"
+    environment:
+      # Time zone used for "today", greetings and relative dates.
+      TZ: Europe/Paris
+      # Optional: set your own secret. One is generated and stored in the volume otherwise.
+      # AUTH_SECRET: change-me
+      # Set to "true" if you serve Agora over HTTPS (reverse proxy).
+      SECURE_COOKIES: "false"
+      MAX_UPLOAD_MB: "20"
+    volumes:
+      - agora-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  agora-data:

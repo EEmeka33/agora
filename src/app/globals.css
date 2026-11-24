@@ -1,0 +1,265 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/* Dark mode is driven by a `dark` class on <html> (set before paint, see layout.tsx). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ─── Design tokens ─────────────────────────────────────────────────────── */
+
+:root {
+  --background: oklch(98.5% 0.002 260);
+  --foreground: oklch(21% 0.01 265);
+  --card: oklch(100% 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(100% 0 0);
+  --muted: oklch(96.5% 0.004 260);
+  --muted-foreground: oklch(50% 0.012 265);
+  --border: oklch(91.5% 0.006 260);
+  --input: oklch(89% 0.008 260);
+  --sidebar: oklch(99.2% 0.002 260);
+  --hover: oklch(95.5% 0.005 260);
+  --destructive: oklch(57.7% 0.245 27.325);
+  --success: oklch(59.6% 0.145 163.225);
+  --warning: oklch(66.6% 0.179 58.318);
+
+  /* Accent (overridden by [data-accent]) */
+  --primary: oklch(51.1% 0.262 276.966);
+  --primary-strong: oklch(45.7% 0.24 277.023);
+  --primary-soft: oklch(96.2% 0.018 272.314);
+  --primary-soft-foreground: oklch(45.7% 0.24 277.023);
+  --primary-foreground: oklch(100% 0 0);
+  --ring: oklch(67.3% 0.182 276.935);
+
+  --radius: 0.75rem;
+  --shadow-color: 220 3% 15%;
+
+  /* Chart series (validated for color-vision deficiencies) */
+  --chart-income: #1baf7a;
+  --chart-expense: #eb6834;
+}
+
+.dark {
+  --background: oklch(16% 0.006 265);
+  --foreground: oklch(96% 0.004 260);
+  --card: oklch(20% 0.007 265);
+  --card-foreground: var(--foreground);
+  --popover: oklch(22% 0.008 265);
+  --muted: oklch(24% 0.008 265);
+  --muted-foreground: oklch(70% 0.012 265);
+  --border: oklch(28% 0.009 265);
+  --input: oklch(32% 0.01 265);
+  --sidebar: oklch(18% 0.006 265);
+  --hover: oklch(26% 0.009 265);
+  --destructive: oklch(63.7% 0.237 25.331);
+  --success: oklch(69.6% 0.17 162.48);
+  --warning: oklch(76.9% 0.188 70.08);
+
+  --primary: oklch(67.3% 0.182 276.935);
+  --primary-strong: oklch(78.5% 0.115 274.713);
+  --primary-soft: oklch(30% 0.08 277);
+  --primary-soft-foreground: oklch(85% 0.08 275);
+  --primary-foreground: oklch(16% 0.006 265);
+  --ring: oklch(58.5% 0.233 277.117);
+
+  --chart-income: #199e70;
+  --chart-expense: #d95926;
+}
+
+/* Accent palettes, chosen per association in Settings → Association. */
+[data-accent="violet"] {
+  --primary: oklch(54.1% 0.281 293.009);
+  --primary-strong: oklch(49.1% 0.27 292.581);
+  --primary-soft: oklch(96.9% 0.016 293.756);
+  --primary-soft-foreground: oklch(49.1% 0.27 292.581);
+  --ring: oklch(70.2% 0.183 293.541);
+}
+[data-accent="sky"] {
+  --primary: oklch(58.8% 0.158 241.966);
+  --primary-strong: oklch(50% 0.134 242.749);
+  --primary-soft: oklch(97.7% 0.013 236.62);
+  --primary-soft-foreground: oklch(50% 0.134 242.749);
+  --ring: oklch(74.6% 0.16 232.661);
+}
+[data-accent="teal"] {
+  --primary: oklch(60% 0.118 184.704);
+  --primary-strong: oklch(51.1% 0.096 186.391);
+  --primary-soft: oklch(98.4% 0.014 180.72);
+  --primary-soft-foreground: oklch(43.7% 0.078 188.216);
+  --ring: oklch(77.7% 0.152 181.912);
+}
+[data-accent="emerald"] {
+  --primary: oklch(59.6% 0.145 163.225);
+  --primary-strong: oklch(50.8% 0.118 165.612);
+  --primary-soft: oklch(97.9% 0.021 166.113);
+  --primary-soft-foreground: oklch(43.2% 0.095 166.913);
+  --ring: oklch(76.5% 0.177 163.223);
+}
+[data-accent="amber"] {
+  --primary: oklch(66.6% 0.179 58.318);
+  --primary-strong: oklch(55.5% 0.163 48.998);
+  --primary-soft: oklch(98.7% 0.022 95.277);
+  --primary-soft-foreground: oklch(47.3% 0.137 46.201);
+  --ring: oklch(82.8% 0.189 84.429);
+}
+[data-accent="rose"] {
+  --primary: oklch(58.6% 0.253 17.585);
+  --primary-strong: oklch(51.4% 0.222 16.935);
+  --primary-soft: oklch(96.9% 0.015 12.422);
+  --primary-soft-foreground: oklch(51.4% 0.222 16.935);
+  --ring: oklch(71.2% 0.194 13.428);
+}
+.dark[data-accent="violet"] {
+  --primary: oklch(70.2% 0.183 293.541);
+  --primary-strong: oklch(81.1% 0.111 293.571);
+  --primary-soft: oklch(30% 0.09 293);
+  --primary-soft-foreground: oklch(86% 0.08 293);
+}
+.dark[data-accent="sky"] {
+  --primary: oklch(74.6% 0.16 232.661);
+  --primary-strong: oklch(82.8% 0.111 230.318);
+  --primary-soft: oklch(29% 0.06 240);
+  --primary-soft-foreground: oklch(86% 0.08 232);
+}
+.dark[data-accent="teal"] {
+  --primary: oklch(77.7% 0.152 181.912);
+  --primary-strong: oklch(85.5% 0.138 181.071);
+  --primary-soft: oklch(28% 0.05 185);
+  --primary-soft-foreground: oklch(87% 0.09 182);
+}
+.dark[data-accent="emerald"] {
+  --primary: oklch(76.5% 0.177 163.223);
+  --primary-strong: oklch(84.5% 0.143 164.978);
+  --primary-soft: oklch(28% 0.06 163);
+  --primary-soft-foreground: oklch(87% 0.1 164);
+}
+.dark[data-accent="amber"] {
+  --primary: oklch(82.8% 0.189 84.429);
+  --primary-strong: oklch(87.9% 0.169 91.605);
+  --primary-soft: oklch(30% 0.06 70);
+  --primary-soft-foreground: oklch(88% 0.12 85);
+}
+.dark[data-accent="rose"] {
+  --primary: oklch(71.2% 0.194 13.428);
+  --primary-strong: oklch(81% 0.117 11.638);
+  --primary-soft: oklch(30% 0.08 15);
+  --primary-soft-foreground: oklch(86% 0.08 13);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-hover: var(--hover);
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius-xl: var(--radius);
+}
+
+@theme {
+  --animate-fade-in: fade-in 0.18s ease-out;
+  --animate-pop-in: pop-in 0.16s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --animate-slide-in: slide-in 0.22s ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes slide-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: none;
+    }
+  }
+}
+
+/* ─── Base ──────────────────────────────────────────────────────────────── */
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+  html {
+    color-scheme: light;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 25%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  dialog::backdrop {
+    background: oklch(15% 0.01 265 / 0.45);
+    backdrop-filter: blur(2px);
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    opacity: 0.6;
+    cursor: pointer;
+  }
+  .dark input[type="date"]::-webkit-calendar-picker-indicator,
+  .dark input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+  }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--input) transparent;
+}
+
+@utility card-shadow {
+  box-shadow:
+    0 1px 2px hsl(var(--shadow-color) / 0.04),
+    0 1px 3px hsl(var(--shadow-color) / 0.04);
+}
+
+@utility pop-shadow {
+  box-shadow:
+    0 10px 30px -10px hsl(var(--shadow-color) / 0.25),
+    0 4px 10px -6px hsl(var(--shadow-color) / 0.15);
+}
