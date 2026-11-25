@@ -29,12 +29,12 @@
     "@prisma/client": "^7.10.1",
     "clsx": "^2.1.1",
     "dotenv": "^18.0.10",
-    "lucide-react": "^1.79.0",
+    "lucide-react": "^1.80.0",
     "next": "16.4.6",
     "nodemailer": "^10.6.1",
     "prisma": "^7.10.1",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "recharts": "^3.11.1",
     "server-only": "^0.0.1",
     "sonner": "^2.0.8",
@@ -43,23 +43,35 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "@tailwindcss/turbopack": "4.3.3",
+    "@playwright/test": "^1.65.1",
+    "@tailwindcss/turbopack": "4.3.5",
     "@types/better-sqlite3": "^9.6.0",
-    "@types/node": "^22.20.5",
+    "@types/node": "^22.20.7",
     "@types/nodemailer": "^8.0.2",
-    "@types/react": "^19",
+    "@types/react": "^19.3.3",
     "@types/react-dom": "^19",
-    "eslint": "^9",
+    "eslint": "^10.15.0",
     "eslint-config-next": "16.4.6",
     "prettier": "^3.10.1",
     "prettier-plugin-tailwindcss": "^0.8.1",
-    "tailwindcss": "4.3.3",
-    "typescript": "^5",
-    "vitest": "^5.1.1"
+    "tailwindcss": "4.3.5",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.2"
   },
-  "description": "Agora \u2014 the open-source, self-hosted workspace to found and run an association: structure, poles, projects, tasks, events, finance and documents.",
+  "description": "Agora — the open-source, self-hosted workspace to found and run an association: structure, poles, projects, tasks, events, finance and documents.",
   "engines": {
     "node": ">=20.19"
+  },
+  "overrides": {
+    "effect": "^3.22.5",
+    "eslint-plugin-react": {
+      "eslint": "$eslint"
+    },
+    "eslint-plugin-jsx-a11y": {
+      "eslint": "$eslint"
+    },
+    "eslint-plugin-import": {
+      "eslint": "$eslint"
+    }
   }
 }

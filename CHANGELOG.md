@@ -6,6 +6,24 @@ All notable changes to Agora are listed here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- Patched a high-severity ReDoS vulnerability in `effect`, a dependency of Prisma's configuration loader
+  (GHSA-7589-6fvf-x4pw), by forcing version 3.22.5 until Prisma ships it.
+
+### Changed
+
+- Updated dependencies: React 19.3.1, ESLint 10, TypeScript 6.0, Playwright 1.65, Tailwind CSS 4.3.5, Vitest 5.1.2,
+  lucide-react 1.80. `npm install` now reports 0 vulnerabilities.
+- CI uses `actions/checkout` and `actions/setup-node` v7 (Node.js 20 runtime deprecation).
+- Dependabot groups minor and patch updates, opens one pull request per major update, and skips TypeScript 7
+  (not supported by the lint tooling yet) and Node.js type definitions newer than the Node.js version Agora runs on.
+
+### Fixed
+
+- Navigations inside a section (between projects, back to a list…) show the loading skeleton immediately.
+- Hydration warnings on the projects timeline and on relative times.
+
 ## [1.0.0] – 2026-11-25
 
 First public release.

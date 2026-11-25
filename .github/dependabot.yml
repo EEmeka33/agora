@@ -3,10 +3,19 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: monthly
+      interval: weekly
     groups:
-      dependencies:
-        patterns: ["*"]
+      # Minor and patch updates together; each major update gets its own pull request.
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Agora runs on Node.js 22 (CI, Dockerfile): keep the matching type definitions.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+      # typescript-eslint, used by `npm run lint`, does not support TypeScript 7 yet.
+      - dependency-name: typescript
+        versions: [">=7"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
