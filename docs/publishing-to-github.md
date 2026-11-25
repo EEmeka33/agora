@@ -25,14 +25,7 @@ uploads and `.env` out of git, a CI workflow, issue and pull request templates, 
    `data/`, `.env` and `backups/` must be listed under "Ignored files". The demo data in `prisma/seed.ts` is
    fictitious (`*.example` addresses).
 
-3. **Replace the `OWNER` placeholder** with your GitHub account (or organization) name in `CHANGELOG.md`
-   and `.github/ISSUE_TEMPLATE/config.yml`, and `<you>` in `docs/self-hosting.md`:
-
-   ```bash
-   grep -rn "OWNER\|<you>" --include=*.md --include=*.yml .  --exclude-dir=node_modules
-   ```
-
-4. Optional: **sign the commits with your name**. The existing commits have a generic author. To rewrite
+3. Optional: **sign the commits with your name**. The existing commits have a generic author. To rewrite
    them with your git identity (do this only before the first push):
 
    ```bash

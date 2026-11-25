@@ -64,5 +64,5 @@ First public release.
 > Builds shared before 1.0.0 used a different database schema. If you tried one, delete the `data/` folder and
 > run `npm run setup` again.
 
-[Unreleased]: https://github.com/OWNER/agora/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/OWNER/agora/releases/tag/v1.0.0
+[Unreleased]: https://github.com/EEmeka33/agora/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/EEmeka33/agora/releases/tag/v1.0.0

@@ -20,7 +20,7 @@ a NAS or a small server.
 Requirements: Node.js **20.19+** (22 LTS recommended) and about 500 MB of disk space.
 
 ```bash
-git clone https://github.com/<you>/agora.git
+git clone https://github.com/EEmeka33/agora.git
 ```
 
 ```bash

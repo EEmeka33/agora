@@ -85,6 +85,10 @@ one place, and runs on your own computer or server.
 Requirements: [Node.js](https://nodejs.org) **20.19 or newer** (22 LTS recommended).
 
 ```bash
+git clone https://github.com/EEmeka33/agora.git && cd agora
+```
+
+```bash
 npm install
 ```
 
