@@ -149,7 +149,10 @@ export function RequestCard({ request: r, compact }: { request: RequestCardData;
         <p className="pointer-events-none relative mt-1 line-clamp-2 text-sm text-muted-foreground">{r.description}</p>
       )}
       <div className="relative mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span
+          className="pointer-events-none flex items-center gap-1.5 text-xs text-muted-foreground"
+          suppressHydrationWarning
+        >
           {r.requester && <Avatar name={r.requester.name} color={r.requester.avatarColor} size="xs" />}
           {t.requests.askedBy(r.requester?.name ?? t.activity.someone, formatRelative(r.createdAt, locale))}
         </span>

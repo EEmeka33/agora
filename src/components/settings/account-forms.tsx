@@ -71,7 +71,7 @@ export function SessionList({ sessions }: { sessions: Session[] }) {
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{describeAgent(s.userAgent, t.settings.unknownDevice)}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-muted-foreground" suppressHydrationWarning>
                   {t.settings.lastActive(formatRelative(s.lastSeenAt, locale))}
                   {s.ip && ` · ${s.ip}`}
                 </p>

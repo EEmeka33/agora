@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { colorOf } from "@/lib/colors";
-import { cn, formatDate, nowWall } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import type { ProjectCardData } from "./project-card";
 
 type TimelineProject = ProjectCardData & { startDate: Date | null };
@@ -11,12 +11,12 @@ type TimelineProject = ProjectCardData & { startDate: Date | null };
 const DAY = 86_400_000;
 
 /** Gantt-like view of projects across months. */
-export function ProjectTimeline({ projects }: { projects: TimelineProject[] }) {
+/** `now` is passed by the server page so the server and browser renders agree. */
+export function ProjectTimeline({ projects, now }: { projects: TimelineProject[]; now: Date }) {
   const t = useT();
   const locale = useLocale();
   const scheduled = projects.filter((p) => p.startDate || p.dueDate);
   const unscheduled = projects.filter((p) => !p.startDate && !p.dueDate);
-  const now = nowWall();
 
   if (scheduled.length === 0) {
     return (

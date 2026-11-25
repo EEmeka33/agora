@@ -74,7 +74,7 @@ export function PollCard({ poll }: { poll: PollCardData }) {
             {poll.anonymous && <Badge color="violet">🔒</Badge>}
           </div>
           <h3 className="font-semibold tracking-tight text-balance">{poll.question}</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-xs text-muted-foreground" suppressHydrationWarning>
             {poll.createdBy && t.polls.by(poll.createdBy)}
             {poll.closed && poll.closedAt && ` · ${t.polls.closedOn(formatRelative(poll.closedAt, locale))}`}
             {!poll.closed && poll.closesAt && ` · ${t.polls.closesIn(formatRelative(poll.closesAt, locale))}`}

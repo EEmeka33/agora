@@ -3,6 +3,7 @@ import { FolderKanban, GanttChart, LayoutGrid, Plus } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
 import { requireContext } from "@/lib/context";
 import { withParams } from "@/lib/url";
+import { nowWall } from "@/lib/utils";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
 import { getMemberOptions, getPoleOptions } from "@/lib/queries";
@@ -105,7 +106,7 @@ export default async function ProjectsPage(props: PageProps<"/projects">) {
           action={newProject(false)}
         />
       ) : view === "timeline" ? (
-        <ProjectTimeline projects={projects} />
+        <ProjectTimeline projects={projects} now={nowWall()} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {projects.map((p) => (
