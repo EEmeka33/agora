@@ -15,6 +15,15 @@ export const can = {
   manageFinance: isManager,
   manageEvents: isManager,
   manageAnnouncements: isManager,
+  /** Join codes: managers can invite members; only admins can give higher roles. */
+  manageCodes: isManager,
+  managePolls: isManager,
+  /** Everyone can open a vote; its creator and managers can close or delete it. */
+  editPoll: (u: Who, p: { createdById: string | null }) => isManager(u) || p.createdById === u.id,
+  /** Requests: managers and the requester can cancel; pole leads and managers can assign. */
+  cancelRequest: (u: Who, r: { requesterId: string | null }) => isManager(u) || r.requesterId === u.id,
+  assignRequest: (u: Who, poleLeadIds: string[]) => isManager(u) || poleLeadIds.includes(u.id),
+  deleteTimeEntry: (u: Who, e: { userId: string }) => isManager(u) || e.userId === u.id,
   createProject: isManager,
   /** Managers, the project lead, or a lead of the project's pole. */
   editProject: (u: Who, p: { leadId: string | null; poleLeadIds?: string[] }) =>

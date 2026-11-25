@@ -118,3 +118,17 @@ export const LOCALES = ["en", "fr"] as const;
 export type Locale = (typeof LOCALES)[number];
 
 export const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD"] as const;
+
+export const REQUEST_STATUSES = ["OPEN", "TAKEN", "DONE", "CANCELLED"] as const;
+export type RequestStatus = (typeof REQUEST_STATUSES)[number];
+
+/** Instance-wide sign-up policy (env SIGNUP_MODE): open | invite | closed */
+export function signupMode(): "open" | "invite" | "closed" {
+  const v = process.env.SIGNUP_MODE;
+  return v === "invite" || v === "closed" ? v : "open";
+}
+
+/** Whether any signed-in account may create a new association (env ALLOW_NEW_ASSOCIATIONS). */
+export function newAssociationsAllowed() {
+  return process.env.ALLOW_NEW_ASSOCIATIONS !== "false";
+}

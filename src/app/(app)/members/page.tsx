@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { KeyRound, Link2, Pencil, Power, Trash2, User, Users } from "lucide-react";
+import { Download, KeyRound, Link2, Pencil, Power, Trash2, User, Users } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { withParams } from "@/lib/url";
 import { getI18n } from "@/lib/i18n/server";
 import { can, isAdmin } from "@/lib/permissions";
@@ -20,43 +19,91 @@ import { RowActions, type RowAction } from "@/components/forms/row-actions";
 import { MemberFields } from "@/components/members/member-fields";
 import { NewMemberDialog } from "@/components/members/new-member-dialog";
 import { memberValues } from "@/components/members/member-values";
+import { JoinCodesPanel } from "@/components/members/join-codes";
+import { buttonVariants } from "@/components/ui/button";
 
 export const metadata: Metadata = { title: "Members" };
 
 export default async function MembersPage(props: PageProps<"/members">) {
-  const user = await requireUser();
+  const { user, db, association } = await requireContext();
   const { t } = await getI18n();
   const sp = await props.searchParams;
   const get = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
   const status = get("status") === "inactive" ? "INACTIVE" : "ACTIVE";
   const year = nowWall().getUTCFullYear();
 
-  const where: Prisma.UserWhereInput = { status };
+  const where: Prisma.MemberWhereInput = { status };
   if (get("q"))
-    where.OR = [{ name: { contains: get("q") } }, { email: { contains: get("q") } }, { title: { contains: get("q") } }];
-  if (get("pole")) where.poleMemberships = { some: { poleId: get("pole") } };
+    where.OR = [
+      { user: { name: { contains: get("q") } } },
+      { user: { email: { contains: get("q") } } },
+      { title: { contains: get("q") } },
+    ];
+  if (get("pole")) where.user = { poleMemberships: { some: { poleId: get("pole") } } };
   if (ROLES.includes(get("role") as never)) where.role = get("role");
 
-  const [members, poles, activeCount, withAccount, paidCount] = await Promise.all([
-    db.user.findMany({
+  const [rows, poles, activeCount, withAccount, paidCount, codes] = await Promise.all([
+    db.member.findMany({
       where,
-      orderBy: { name: "asc" },
+      orderBy: { user: { name: "asc" } },
       include: {
-        poleMemberships: { include: { pole: { select: { id: true, name: true, color: true } } } },
-        memberships: { where: { year }, select: { id: true } },
-        invitations: {
-          where: { usedAt: null, kind: "INVITE" },
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { expiresAt: true },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            bio: true,
+            skills: true,
+            avatarColor: true,
+            passwordHash: true,
+            poleMemberships: {
+              where: { pole: { associationId: association.id } },
+              include: { pole: { select: { id: true, name: true, color: true } } },
+            },
+            dues: { where: { year, associationId: association.id }, select: { id: true } },
+            invitations: {
+              where: { usedAt: null, kind: "INVITE" },
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: { expiresAt: true },
+            },
+          },
         },
       },
     }),
-    getPoleOptions(),
-    db.user.count({ where: { status: "ACTIVE" } }),
-    db.user.count({ where: { status: "ACTIVE", passwordHash: { not: null } } }),
-    db.membership.count({ where: { year, user: { status: "ACTIVE" } } }),
+    getPoleOptions(db),
+    db.member.count({ where: { status: "ACTIVE" } }),
+    db.member.count({ where: { status: "ACTIVE", user: { passwordHash: { not: null } } } }),
+    db.dues.count({
+      where: { year, user: { memberships: { some: { associationId: association.id, status: "ACTIVE" } } } },
+    }),
+    can.manageCodes(user)
+      ? db.joinCode.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 30,
+          include: { pole: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
   ]);
+  const members = rows.map(({ user: u, ...m }) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    phone: u.phone,
+    bio: u.bio,
+    skills: u.skills,
+    avatarColor: u.avatarColor,
+    hasAccount: !!u.passwordHash,
+    poleMemberships: u.poleMemberships,
+    paid: u.dues.length > 0,
+    invitations: u.invitations,
+    title: m.title,
+    role: m.role,
+    boardPosition: m.boardPosition,
+    status: m.status,
+    joinedAt: m.joinedAt,
+  }));
   const admin = isAdmin(user);
   const qs = (patch: Record<string, string | null>) => withParams("/members", sp, patch);
 
@@ -65,7 +112,16 @@ export default async function MembersPage(props: PageProps<"/members">) {
       <PageHeader
         title={t.members.title}
         description={t.members.subtitle}
-        actions={admin && <NewMemberDialog poles={poles} defaultOpen={get("new") === "1"} />}
+        actions={
+          <>
+            {can.manageCodes(user) && (
+              <a href="/api/export/members" className={buttonVariants({ variant: "outline" })}>
+                <Download /> {t.members.exportCsv}
+              </a>
+            )}
+            {admin && <NewMemberDialog poles={poles} defaultOpen={get("new") === "1"} />}
+          </>
+        }
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
@@ -135,7 +191,7 @@ export default async function MembersPage(props: PageProps<"/members">) {
                   }
                   if (admin) {
                     items.push(
-                      m.passwordHash
+                      m.hasAccount
                         ? {
                             kind: "run",
                             label: t.members.resetPassword,
@@ -213,7 +269,7 @@ export default async function MembersPage(props: PageProps<"/members">) {
                         </div>
                       </td>
                       <td className="px-3 py-3">
-                        {m.memberships.length ? (
+                        {m.paid ? (
                           <Badge color="emerald" dot>
                             {t.members.duesPaid}
                           </Badge>
@@ -224,7 +280,7 @@ export default async function MembersPage(props: PageProps<"/members">) {
                         )}
                       </td>
                       <td className="px-3 py-3 text-xs">
-                        {m.passwordHash ? (
+                        {m.hasAccount ? (
                           <span className="text-success">● {t.members.accountActive}</span>
                         ) : pending ? (
                           <span className="text-warning">● {t.members.accountPending}</span>
@@ -242,6 +298,23 @@ export default async function MembersPage(props: PageProps<"/members">) {
             </table>
           </div>
         </div>
+      )}
+      {can.manageCodes(user) && (
+        <JoinCodesPanel
+          codes={codes.map((c) => ({
+            id: c.id,
+            code: c.code,
+            label: c.label,
+            role: c.role,
+            pole: c.pole?.name ?? null,
+            uses: c.uses,
+            maxUses: c.maxUses,
+            expiresAt: c.expiresAt,
+            revokedAt: c.revokedAt,
+          }))}
+          poles={poles}
+          canGiveRoles={admin}
+        />
       )}
     </>
   );

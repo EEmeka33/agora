@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, Download, Landmark, Pencil, Plus, Scale, Trash2, Wallet } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
+import type { TenantDb } from "@/lib/tenant";
 import { withParams } from "@/lib/url";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
-import { getAllProjectOptions, getAssociation, getMemberOptions, getPoleOptions } from "@/lib/queries";
+import { getAllProjectOptions, getMemberOptions, getPoleOptions } from "@/lib/queries";
 import { TRANSACTION_TYPES } from "@/lib/constants";
 import { cn, formatDate, formatMoney, nowWall, pct } from "@/lib/utils";
 import {
@@ -33,7 +33,7 @@ import { CategoryBars, MonthlyChart } from "@/components/finance/charts";
 export const metadata: Metadata = { title: "Finance" };
 
 export default async function FinancePage(props: PageProps<"/finance">) {
-  const user = await requireUser();
+  const { user, db, association } = await requireContext();
   const { t, locale } = await getI18n();
   const sp = await props.searchParams;
   const get = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
@@ -42,7 +42,6 @@ export default async function FinancePage(props: PageProps<"/finance">) {
   const tab = get("tab") === "dues" ? "dues" : "transactions";
   const yearRange = { gte: new Date(Date.UTC(year, 0, 1)), lt: new Date(Date.UTC(year + 1, 0, 1)) };
 
-  const association = await getAssociation();
   const currency = association.currency;
   const money = (c: number | null | undefined) => formatMoney(c, currency, locale);
   const canManage = can.manageFinance(user);
@@ -65,9 +64,9 @@ export default async function FinancePage(props: PageProps<"/finance">) {
       },
       orderBy: { title: "asc" },
     }),
-    getAllProjectOptions(),
-    getPoleOptions(),
-    getMemberOptions(),
+    getAllProjectOptions(db),
+    getPoleOptions(db),
+    getMemberOptions(db),
   ]);
 
   const sum = (type: string) => yearTx.filter((x) => x.type === type).reduce((s, x) => s + x.amountCents, 0);
@@ -217,6 +216,7 @@ export default async function FinancePage(props: PageProps<"/finance">) {
 
       {tab === "transactions" ? (
         <TransactionsTab
+          db={db}
           sp={{ type: get("type"), category: get("category"), q: get("q") }}
           yearRange={yearRange}
           canManage={canManage}
@@ -228,6 +228,7 @@ export default async function FinancePage(props: PageProps<"/finance">) {
         />
       ) : (
         <DuesTab
+          db={db}
           year={year}
           canManage={canManage}
           members={members}
@@ -244,6 +245,7 @@ export default async function FinancePage(props: PageProps<"/finance">) {
 type T = Awaited<ReturnType<typeof getI18n>>["t"];
 
 async function TransactionsTab({
+  db,
   sp,
   yearRange,
   canManage,
@@ -253,6 +255,7 @@ async function TransactionsTab({
   t,
   locale,
 }: {
+  db: TenantDb;
   sp: { type: string; category: string; q: string };
   yearRange: { gte: Date; lt: Date };
   canManage: boolean;
@@ -398,6 +401,7 @@ async function TransactionsTab({
 }
 
 async function DuesTab({
+  db,
   year,
   canManage,
   members,
@@ -406,6 +410,7 @@ async function DuesTab({
   t,
   locale,
 }: {
+  db: TenantDb;
   year: number;
   canManage: boolean;
   members: { id: string; name: string; avatarColor: string }[];
@@ -414,7 +419,7 @@ async function DuesTab({
   t: T;
   locale: string;
 }) {
-  const memberships = await db.membership.findMany({ where: { year } });
+  const memberships = await db.dues.findMany({ where: { year } });
   const paidIds = new Set(memberships.map((m) => m.userId));
   const paid = members.filter((m) => paidIds.has(m.id)).length;
   const unpaidMembers = members.filter((m) => !paidIds.has(m.id));

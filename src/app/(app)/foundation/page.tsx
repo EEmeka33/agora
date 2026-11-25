@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Lightbulb, PartyPopper, Plus, Rocket } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
 import { getMemberOptions } from "@/lib/queries";
@@ -22,14 +21,14 @@ import { StepItem } from "@/components/foundation/step-item";
 export const metadata: Metadata = { title: "Founding" };
 
 export default async function FoundationPage() {
-  const user = await requireUser();
+  const { user, db } = await requireContext();
   const { t } = await getI18n();
   const [steps, members] = await Promise.all([
     db.foundationStep.findMany({
       orderBy: [{ order: "asc" }, { createdAt: "asc" }],
       include: { assignee: { select: { id: true, name: true, avatarColor: true } } },
     }),
-    getMemberOptions(),
+    getMemberOptions(db),
   ]);
   const canManage = can.manageFoundation(user);
   const progress = foundationProgress(steps);

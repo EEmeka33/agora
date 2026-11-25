@@ -1,7 +1,6 @@
 "use server";
 
-import { db } from "@/lib/db";
-import { ensure, fail, ok, reader, withUser, type ActionState } from "@/lib/action-utils";
+import { assertRefs, ensure, fail, ok, reader, withUser, type ActionState } from "@/lib/action-utils";
 import { STEP_CATEGORIES, STEP_STATUSES } from "@/lib/constants";
 import { can } from "@/lib/permissions";
 import { foundationSteps } from "@/lib/foundation-template";
@@ -22,15 +21,22 @@ function readStep(fd: FormData) {
 }
 
 export async function createStep(_prev: ActionState, fd: FormData) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db, association } = ctx;
     ensure(can.manageFoundation(user), t);
     const data = readStep(fd);
     if (!data.title) return fail(t.validation.required, { title: t.validation.required });
+    await assertRefs(ctx, { userIds: [data.assigneeId] });
     const count = await db.foundationStep.count();
     const step = await db.foundationStep.create({
-      data: { ...data, order: count, completedAt: data.status === "DONE" ? new Date() : null },
+      data: {
+        ...data,
+        associationId: association.id,
+        order: count,
+        completedAt: data.status === "DONE" ? new Date() : null,
+      },
     });
-    await logActivity({
+    await logActivity(ctx, {
       actorId: user.id,
       action: "created",
       entityType: "step",
@@ -42,17 +48,19 @@ export async function createStep(_prev: ActionState, fd: FormData) {
 }
 
 export async function updateStep(id: string, _prev: ActionState, fd: FormData) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db } = ctx;
     const step = await db.foundationStep.findUnique({ where: { id } });
     if (!step) return fail(t.common.notFound);
     ensure(can.manageFoundation(user) || step.assigneeId === user.id, t);
     const data = readStep(fd);
     if (!data.title) return fail(t.validation.required, { title: t.validation.required });
+    await assertRefs(ctx, { userIds: [data.assigneeId] });
     await db.foundationStep.update({
       where: { id },
       data: { ...data, completedAt: data.status === "DONE" ? (step.completedAt ?? new Date()) : null },
     });
-    await logActivity({
+    await logActivity(ctx, {
       actorId: user.id,
       action: data.status === "DONE" && step.status !== "DONE" ? "completed" : "updated",
       entityType: "step",
@@ -64,7 +72,8 @@ export async function updateStep(id: string, _prev: ActionState, fd: FormData) {
 }
 
 export async function setStepStatus(id: string, status: string) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db } = ctx;
     const step = await db.foundationStep.findUnique({ where: { id } });
     if (!step) return fail(t.common.notFound);
     ensure(can.manageFoundation(user) || step.assigneeId === user.id, t);
@@ -74,7 +83,7 @@ export async function setStepStatus(id: string, status: string) {
       data: { status: next, completedAt: next === "DONE" ? new Date() : null },
     });
     if (next === "DONE") {
-      await logActivity({
+      await logActivity(ctx, {
         actorId: user.id,
         action: "completed",
         entityType: "step",
@@ -87,7 +96,7 @@ export async function setStepStatus(id: string, status: string) {
 }
 
 export async function deleteStep(id: string) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async ({ user, t, db }) => {
     ensure(can.manageFoundation(user), t);
     await db.foundationStep.delete({ where: { id } });
     return ok(t.common.deleted);
@@ -95,11 +104,11 @@ export async function deleteStep(id: string) {
 }
 
 export async function loadFoundationTemplate() {
-  return withUser(async ({ user, t, locale }) => {
+  return withUser(async ({ user, t, locale, db, association }) => {
     ensure(can.manageFoundation(user), t);
     const offset = await db.foundationStep.count();
     await db.foundationStep.createMany({
-      data: foundationSteps(locale).map((s) => ({ ...s, order: s.order + offset })),
+      data: foundationSteps(locale).map((s) => ({ ...s, order: s.order + offset, associationId: association.id })),
     });
     return ok(t.common.created);
   });

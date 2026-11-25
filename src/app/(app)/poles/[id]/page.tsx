@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CalendarDays, ChevronLeft, Crown, Pencil, Trash2, UserMinus, UserRound } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { CalendarDays, ChevronLeft, Inbox, Crown, Pencil, Trash2, UserMinus, UserRound } from "lucide-react";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
-import { getMemberOptions } from "@/lib/queries";
+import { getMemberOptions, getPoleOptions, getProjectOptions, myPoleIds } from "@/lib/queries";
+import { loadRequests } from "@/lib/request-queries";
+import { createRequest } from "@/actions/requests";
+import { RequestFields } from "@/components/requests/request-fields";
+import { RequestCard } from "@/components/requests/request-card";
 import { loadProjects } from "@/lib/project-queries";
 import { loadTaskCards } from "@/lib/task-queries";
 import { colorOf } from "@/lib/colors";
@@ -28,14 +31,23 @@ import { TaskTable } from "@/components/tasks/task-table";
 export const metadata: Metadata = { title: "Pole" };
 
 export default async function PolePage(props: PageProps<"/poles/[id]">) {
-  const user = await requireUser();
+  const { user, db, association } = await requireContext();
   const { t, locale } = await getI18n();
   const { id } = await props.params;
   const pole = await db.pole.findUnique({
     where: { id },
     include: {
       members: {
-        include: { user: { select: { id: true, name: true, avatarColor: true, title: true, boardPosition: true } } },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatarColor: true,
+              memberships: { where: { associationId: association.id }, select: { title: true, boardPosition: true } },
+            },
+          },
+        },
         orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
       },
       responsibilities: { include: { owner: { select: { id: true, name: true, avatarColor: true } } } },
@@ -46,10 +58,14 @@ export default async function PolePage(props: PageProps<"/poles/[id]">) {
 
   const isLead = pole.members.some((m) => m.userId === user.id && m.role === "LEAD");
   const canEdit = can.managePoles(user) || isLead;
-  const [projects, tasks, members] = await Promise.all([
-    loadProjects({ poleId: id, status: { notIn: ["CANCELLED"] } }),
-    loadTaskCards({ poleId: id, status: { not: "DONE" } }, user),
-    getMemberOptions(),
+  const [projects, tasks, members, requests, allPoles, myPoles, projectOptions] = await Promise.all([
+    loadProjects(db, { poleId: id, status: { notIn: ["CANCELLED"] } }),
+    loadTaskCards(db, { poleId: id, status: { not: "DONE" } }, user),
+    getMemberOptions(db),
+    loadRequests(db, { poleId: id, status: { in: ["OPEN", "TAKEN"] } }, user, 20),
+    getPoleOptions(db),
+    myPoleIds(db, user.id),
+    getProjectOptions(db),
   ]);
   const c = colorOf(pole.color);
 
@@ -123,6 +139,41 @@ export default async function PolePage(props: PageProps<"/poles/[id]">) {
 
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
+          <section>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-[15px] font-semibold">
+                {t.requests.title} <span className="font-normal text-muted-foreground">{requests.length}</span>
+              </h2>
+              <FormDialog
+                title={t.requests.askTitle(pole.name)}
+                action={createRequest}
+                submitLabel={t.common.create}
+                trigger={
+                  <Button size="sm" variant="soft">
+                    <Inbox /> {t.requests.ask}
+                  </Button>
+                }
+              >
+                <RequestFields
+                  poles={allPoles}
+                  myPoles={allPoles.filter((p) => myPoles.includes(p.id) && p.id !== pole.id)}
+                  projects={projectOptions.map((p) => ({ id: p.id, name: p.title }))}
+                  defaults={{ poleId: pole.id }}
+                />
+              </FormDialog>
+            </div>
+            {requests.length === 0 ? (
+              <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
+                {t.requests.empty}
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {requests.map((r) => (
+                  <RequestCard key={r.id} request={r} compact />
+                ))}
+              </div>
+            )}
+          </section>
           <Card>
             <CardHeader>
               <CardTitle>
@@ -170,7 +221,9 @@ export default async function PolePage(props: PageProps<"/poles/[id]">) {
                     <Link href={`/members/${m.userId}`} className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium hover:underline">{m.user.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {m.user.boardPosition ? t.enums.boardPosition[m.user.boardPosition] : (m.user.title ?? "")}
+                        {m.user.memberships[0]?.boardPosition
+                          ? t.enums.boardPosition[m.user.memberships[0].boardPosition]
+                          : (m.user.memberships[0]?.title ?? "")}
                       </p>
                     </Link>
                     {m.role === "LEAD" && (

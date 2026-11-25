@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Crown, Pencil, Plus, Trash2, UserPlus } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can, isAdmin } from "@/lib/permissions";
-import { getAssociation, getMemberOptions, getPoleOptions } from "@/lib/queries";
+import { getMemberOptions, getPoleOptions } from "@/lib/queries";
 import { BOARD_POSITIONS } from "@/lib/constants";
 import { colorOf } from "@/lib/colors";
 import { cn } from "@/lib/utils";
@@ -25,16 +24,27 @@ export const metadata: Metadata = { title: "Structure" };
 const CORE_POSITIONS = ["PRESIDENT", "SECRETARY", "TREASURER"];
 
 export default async function StructurePage() {
-  const user = await requireUser();
+  const { user, db, association } = await requireContext();
   const { t } = await getI18n();
-  const [association, users, poles, responsibilities, memberOptions, poleOptions] = await Promise.all([
-    getAssociation(),
-    db.user.findMany({
+  const [members, poles, responsibilities, memberOptions, poleOptions] = await Promise.all([
+    db.member.findMany({
       where: { status: "ACTIVE" },
-      orderBy: { name: "asc" },
+      orderBy: { user: { name: "asc" } },
       include: {
-        poleMemberships: true,
-        _count: { select: { tasksAssigned: { where: { status: { not: "DONE" } } }, responsibilities: true } },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatarColor: true,
+            poleMemberships: { where: { pole: { associationId: association.id } } },
+            _count: {
+              select: {
+                tasksAssigned: { where: { status: { not: "DONE" }, associationId: association.id } },
+                responsibilities: { where: { associationId: association.id } },
+              },
+            },
+          },
+        },
       },
     }),
     db.pole.findMany({
@@ -48,10 +58,11 @@ export default async function StructurePage() {
         pole: { select: { id: true, name: true, color: true } },
       },
     }),
-    getMemberOptions(),
-    getPoleOptions(),
+    getMemberOptions(db),
+    getPoleOptions(db),
   ]);
 
+  const users = members.map((m) => ({ ...m.user, boardPosition: m.boardPosition }));
   type Seat = { position: string; user: (typeof users)[number] | null };
   const board = BOARD_POSITIONS.flatMap((position): Seat[] => {
     const holders = users.filter((u) => u.boardPosition === position);

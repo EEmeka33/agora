@@ -8,7 +8,7 @@ const env = {
   ...process.env,
   DATABASE_URL: "file:./data/e2e.db",
   UPLOAD_DIR: "./data/e2e-uploads",
-  AUTH_SECRET: process.env.AUTH_SECRET ?? "e2e-secret-e2e-secret-e2e-secret",
+  SMTP_URL: "",
 };
 rmSync("data/e2e.db", { force: true });
 rmSync("data/e2e-uploads", { recursive: true, force: true });

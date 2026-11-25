@@ -1,15 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { db } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getContext } from "@/lib/context";
 
 export async function GET(request: NextRequest) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ results: [] }, { status: 401 });
+  const ctx = await getContext();
+  if (!ctx) return NextResponse.json({ results: [] }, { status: 401 });
+  const { db } = ctx;
   const q = (request.nextUrl.searchParams.get("q") ?? "").trim();
   if (q.length < 2) return NextResponse.json({ results: [] });
 
   const contains = { contains: q };
-  const [projects, tasks, members, poles, events, documents] = await Promise.all([
+  const [projects, tasks, members, poles, events, documents, requests] = await Promise.all([
     db.project.findMany({
       where: { title: contains },
       take: 5,
@@ -20,10 +20,10 @@ export async function GET(request: NextRequest) {
       take: 6,
       select: { id: true, title: true, project: { select: { title: true } } },
     }),
-    db.user.findMany({
-      where: { OR: [{ name: contains }, { email: contains }] },
+    db.member.findMany({
+      where: { OR: [{ user: { name: contains } }, { user: { email: contains } }, { title: contains }] },
       take: 5,
-      select: { id: true, name: true, title: true },
+      select: { title: true, user: { select: { id: true, name: true } } },
     }),
     db.pole.findMany({ where: { name: contains }, take: 4, select: { id: true, name: true } }),
     db.event.findMany({
@@ -32,7 +32,12 @@ export async function GET(request: NextRequest) {
       orderBy: { startAt: "desc" },
       select: { id: true, title: true, startAt: true },
     }),
-    db.document.findMany({ where: { title: contains }, take: 4, select: { id: true, title: true, category: true } }),
+    db.document.findMany({ where: { title: contains }, take: 4, select: { id: true, title: true } }),
+    db.request.findMany({
+      where: { title: contains },
+      take: 4,
+      select: { id: true, title: true, pole: { select: { name: true } } },
+    }),
   ]);
 
   const results = [
@@ -50,12 +55,19 @@ export async function GET(request: NextRequest) {
       subtitle: t.project?.title,
       href: `/tasks/${t.id}`,
     })),
+    ...requests.map((r) => ({
+      type: "requests",
+      id: r.id,
+      title: r.title,
+      subtitle: r.pole.name,
+      href: `/requests/${r.id}`,
+    })),
     ...members.map((m) => ({
       type: "members",
-      id: m.id,
-      title: m.name,
+      id: m.user.id,
+      title: m.user.name,
       subtitle: m.title ?? undefined,
-      href: `/members/${m.id}`,
+      href: `/members/${m.user.id}`,
     })),
     ...poles.map((p) => ({ type: "poles", id: p.id, title: p.name, href: `/poles/${p.id}` })),
     ...events.map((e) => ({

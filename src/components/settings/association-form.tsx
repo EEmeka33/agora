@@ -27,6 +27,7 @@ export type AssociationValues = {
   locale: string;
   currency: string;
   membershipFeeCents: number | null;
+  volunteerHourCents: number | null;
   fiscalYearStartMonth: number;
 };
 
@@ -110,6 +111,13 @@ export function AssociationForm({ value }: { value: AssociationValues }) {
             label={t.setup.currency}
             defaultValue={value.currency}
             options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+          />
+          <TextField
+            name="volunteerHour"
+            inputMode="decimal"
+            label={t.settings.volunteerHourValue}
+            defaultValue={centsToInput(value.volunteerHourCents)}
+            optional
           />
           <TextField
             name="membershipFee"

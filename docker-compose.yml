@@ -11,8 +11,14 @@ services:
     environment:
       # Time zone used for "today", greetings and relative dates.
       TZ: Europe/Paris
-      # Optional: set your own secret. One is generated and stored in the volume otherwise.
-      # AUTH_SECRET: change-me
+      # Who can create an account: open | invite | closed
+      SIGNUP_MODE: "open"
+      ALLOW_NEW_ASSOCIATIONS: "true"
+      # Public address used in emails and links, e.g. https://agora.my-association.org
+      # APP_URL: ""
+      # Optional email notifications / password reset:
+      # SMTP_URL: "smtps://user:password@smtp.example.org:465"
+      # MAIL_FROM: "Agora <no-reply@my-association.org>"
       # Set to "true" if you serve Agora over HTTPS (reverse proxy).
       SECURE_COOKIES: "false"
       MAX_UPLOAD_MB: "20"

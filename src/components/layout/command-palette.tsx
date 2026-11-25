@@ -8,6 +8,7 @@ import {
   CornerDownLeft,
   FileText,
   FolderKanban,
+  Inbox,
   Layers,
   Loader2,
   Search,
@@ -30,6 +31,7 @@ const typeIcons: Record<string, LucideIcon> = {
   poles: Layers,
   events: CalendarDays,
   documents: FileText,
+  requests: Inbox,
 };
 
 export function CommandPalette() {
@@ -54,6 +56,10 @@ export function CommandPalette() {
           ["members", "/members"],
           ["projects", "/projects"],
           ["tasks", "/tasks"],
+          ["requests", "/requests"],
+          ["polls", "/polls"],
+          ["volunteering", "/volunteering"],
+          ["notifications", "/notifications"],
           ["events", "/events"],
           ["documents", "/documents"],
           ["finance", "/finance"],

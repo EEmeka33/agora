@@ -12,9 +12,11 @@ export function Menu({
   children,
   align = "end",
   className,
+  triggerClassName,
   label,
 }: {
   trigger: React.ReactNode;
+  triggerClassName?: string;
   children: (close: () => void) => React.ReactNode;
   align?: "start" | "end";
   className?: string;
@@ -73,7 +75,7 @@ export function Menu({
     <>
       <span
         ref={triggerRef}
-        className="inline-flex"
+        className={triggerClassName ?? "inline-flex"}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();

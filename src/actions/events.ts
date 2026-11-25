@@ -1,10 +1,11 @@
 "use server";
 
-import { db } from "@/lib/db";
-import { ensure, fail, ok, reader, withUser, type ActionState } from "@/lib/action-utils";
+import { assertRefs, ensure, fail, ok, reader, withUser, type ActionState } from "@/lib/action-utils";
 import { EVENT_TYPES, RSVP } from "@/lib/constants";
 import { can } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { associationMemberIds, notify, poleMemberIds } from "@/lib/notifications";
+import { formatDateTime } from "@/lib/utils";
 
 function readEvent(fd: FormData) {
   const f = reader(fd);
@@ -22,44 +23,60 @@ function readEvent(fd: FormData) {
 }
 
 export async function createEvent(_prev: ActionState, fd: FormData) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db, association } = ctx;
     ensure(can.manageEvents(user), t);
     const data = readEvent(fd);
     const errors: Record<string, string> = {};
     if (!data.title) errors.title = t.validation.required;
     if (!data.startAt) errors.startAt = t.validation.invalidDate;
     if (data.startAt && data.endAt && data.endAt < data.startAt) errors.endAt = t.validation.dateOrder;
-    if (Object.keys(errors).length || !data.startAt) return fail(t.validation.required, errors);
+    if (Object.keys(errors).length || !data.startAt)
+      return fail(Object.values(errors)[0] ?? t.validation.required, errors);
+    await assertRefs(ctx, { poleId: data.poleId, projectId: data.projectId });
     const event = await db.event.create({
       data: {
         ...data,
         startAt: data.startAt,
+        associationId: association.id,
         createdById: user.id,
         attendees: { create: { userId: user.id, status: "GOING" } },
       },
     });
-    await logActivity({
+    await logActivity(ctx, {
       actorId: user.id,
       action: "created",
       entityType: "event",
       entityId: event.id,
       entityLabel: event.title,
     });
+    if (reader(fd).bool("notify")) {
+      const recipients = data.poleId ? await poleMemberIds(data.poleId) : await associationMemberIds(association.id);
+      await notify(ctx, {
+        userIds: recipients,
+        type: "event.new",
+        data: { title: event.title, when: formatDateTime(event.startAt, association.locale) },
+        link: `/events/${event.id}`,
+      });
+    }
     return ok(t.common.created, { id: event.id });
   });
 }
 
 export async function updateEvent(id: string, _prev: ActionState, fd: FormData) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db } = ctx;
     ensure(can.manageEvents(user), t);
     const data = readEvent(fd);
     const errors: Record<string, string> = {};
     if (!data.title) errors.title = t.validation.required;
     if (!data.startAt) errors.startAt = t.validation.invalidDate;
     if (data.startAt && data.endAt && data.endAt < data.startAt) errors.endAt = t.validation.dateOrder;
-    if (Object.keys(errors).length || !data.startAt) return fail(t.validation.required, errors);
+    if (Object.keys(errors).length || !data.startAt)
+      return fail(Object.values(errors)[0] ?? t.validation.required, errors);
+    await assertRefs(ctx, { poleId: data.poleId, projectId: data.projectId });
     await db.event.update({ where: { id }, data: { ...data, startAt: data.startAt } });
-    await logActivity({
+    await logActivity(ctx, {
       actorId: user.id,
       action: "updated",
       entityType: "event",
@@ -71,16 +88,18 @@ export async function updateEvent(id: string, _prev: ActionState, fd: FormData) 
 }
 
 export async function deleteEvent(id: string) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db } = ctx;
     ensure(can.manageEvents(user), t);
     const event = await db.event.delete({ where: { id } });
-    await logActivity({ actorId: user.id, action: "deleted", entityType: "event", entityLabel: event.title });
+    await logActivity(ctx, { actorId: user.id, action: "deleted", entityType: "event", entityLabel: event.title });
     return ok(t.common.deleted);
   });
 }
 
 export async function rsvp(eventId: string, status: string) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db } = ctx;
     const next = RSVP.includes(status as never) ? status : "GOING";
     const event = await db.event.findUnique({ where: { id: eventId }, select: { title: true } });
     if (!event) return fail(t.common.notFound);
@@ -89,7 +108,7 @@ export async function rsvp(eventId: string, status: string) {
       create: { eventId, userId: user.id, status: next },
       update: { status: next },
     });
-    await logActivity({
+    await logActivity(ctx, {
       actorId: user.id,
       action: "responded",
       entityType: "event",
@@ -101,7 +120,8 @@ export async function rsvp(eventId: string, status: string) {
 }
 
 export async function saveMinutes(eventId: string, _prev: ActionState, fd: FormData) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db } = ctx;
     const event = await db.event.findUnique({ where: { id: eventId } });
     if (!event) return fail(t.common.notFound);
     ensure(
@@ -109,7 +129,7 @@ export async function saveMinutes(eventId: string, _prev: ActionState, fd: FormD
       t,
     );
     await db.event.update({ where: { id: eventId }, data: { minutes: reader(fd).opt("minutes") } });
-    await logActivity({
+    await logActivity(ctx, {
       actorId: user.id,
       action: "updated",
       entityType: "event",

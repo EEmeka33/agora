@@ -13,17 +13,19 @@ export function LinkResultDialog({
   link,
   onClose,
   title,
+  description,
 }: {
   link: string | null;
   onClose: () => void;
   title?: string;
+  description?: string;
 }) {
   const t = useT();
   const [copied, setCopied] = React.useState(false);
   return (
     <Dialog open={!!link} onOpenChange={(o) => !o && onClose()} title={title ?? t.members.invite} size="md">
       <div className="space-y-3 px-5 py-5">
-        <p className="text-sm text-muted-foreground">{t.members.inviteCreated}</p>
+        <p className="text-sm text-muted-foreground">{description ?? t.members.inviteCreated}</p>
         <div className="flex gap-2">
           <Input readOnly value={link ?? ""} onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
           <Button

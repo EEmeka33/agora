@@ -24,7 +24,7 @@ export function InviteForm({
         name="password"
         type="password"
         label={t.auth.password}
-        minLength={8}
+        minLength={10}
         required
         autoComplete="new-password"
         hint={t.validation.passwordLength}
@@ -33,7 +33,7 @@ export function InviteForm({
         name="confirm"
         type="password"
         label={t.setup.confirmPassword}
-        minLength={8}
+        minLength={10}
         required
         autoComplete="new-password"
       />

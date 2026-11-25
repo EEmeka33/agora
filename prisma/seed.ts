@@ -1,15 +1,16 @@
 /**
  * Demo data for Agora.
  *
- *   npm run db:seed            → fills an EMPTY database with a demo association
+ *   npm run db:seed            → fills an EMPTY database with two demo associations
  *   npm run db:seed -- --reset → wipes everything first (careful!)
  *
- * Every demo account uses the password: agora1234
+ * Every demo account uses the password: agora-demo-2026
  */
 import "dotenv/config";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import bcrypt from "bcryptjs";
+import { hash } from "@node-rs/argon2";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { foundationSteps } from "../src/lib/foundation-template";
@@ -19,55 +20,62 @@ const db = new PrismaClient({
 });
 const reset = process.argv.includes("--reset");
 const locale = process.env.SEED_LOCALE === "fr" ? "fr" : "en";
-const PASSWORD = "agora1234";
+const PASSWORD = "agora-demo-2026";
+const JOIN_CODE = "GREEN-CAMPS";
 
 const now = new Date();
 const wallNow = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-const day = (offset: number, hour = 0, minute = 0) => {
-  const d = new Date(
-    Date.UTC(wallNow.getUTCFullYear(), wallNow.getUTCMonth(), wallNow.getUTCDate() + offset, hour, minute),
-  );
-  return d;
-};
+const day = (offset: number, hour = 0, minute = 0) =>
+  new Date(Date.UTC(wallNow.getUTCFullYear(), wallNow.getUTCMonth(), wallNow.getUTCDate() + offset, hour, minute));
 const ago = (days: number) => new Date(now.getTime() - days * 86_400_000);
 const eur = (n: number) => Math.round(n * 100);
-
-async function wipe() {
-  // Order matters because of foreign keys.
-  await db.activity.deleteMany();
-  await db.taskComment.deleteMany();
-  await db.task.deleteMany();
-  await db.milestone.deleteMany();
-  await db.projectUpdate.deleteMany();
-  await db.projectMember.deleteMany();
-  await db.membership.deleteMany();
-  await db.transaction.deleteMany();
-  await db.document.deleteMany();
-  await db.eventAttendee.deleteMany();
-  await db.event.deleteMany();
-  await db.project.deleteMany();
-  await db.responsibility.deleteMany();
-  await db.poleMember.deleteMany();
-  await db.pole.deleteMany();
-  await db.foundationStep.deleteMany();
-  await db.announcement.deleteMany();
-  await db.invitation.deleteMany();
-  await db.user.deleteMany();
-  await db.association.deleteMany();
-}
+const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 
 async function main() {
-  const existing = await db.user.count();
-  if (existing > 0 && !reset) {
+  if ((await db.user.count()) > 0 && !reset) {
     console.log("The database already contains data. Run `npm run db:seed -- --reset` to wipe it and load the demo.");
     return;
   }
-  if (reset) await wipe();
+  if (reset) {
+    // Deleting associations cascades to everything they contain; then the accounts.
+    await db.association.deleteMany();
+    await db.user.deleteMany();
+  }
 
-  const hash = await bcrypt.hash(PASSWORD, 10);
+  const passwordHash = await hash(PASSWORD, { memoryCost: 19456, timeCost: 2, parallelism: 1 });
   const year = wallNow.getUTCFullYear();
 
-  await db.association.create({
+  // ─── Accounts ─────────────────────────────────────────────────────────────
+  const people = [
+    { key: "camille", name: "Camille Martin", color: "emerald", skills: "public speaking, project management" },
+    { key: "yanis", name: "Yanis Benali", color: "sky", skills: "accounting, spreadsheets" },
+    { key: "lea", name: "Léa Dubois", color: "violet", skills: "writing, organization" },
+    { key: "thomas", name: "Thomas Nguyen", color: "teal", skills: "negotiation, networking, electronics" },
+    { key: "ines", name: "Inès Moreau", color: "amber", skills: "event planning, logistics" },
+    { key: "lucas", name: "Lucas Bernard", color: "rose", skills: "design, video, social media" },
+    { key: "sarah", name: "Sarah Cohen", color: "lime", skills: "gardening, biology" },
+    { key: "maxime", name: "Maxime Petit", color: "orange", skills: "photography", noAccount: true },
+    { key: "chloe", name: "Chloé Laurent", color: "pink", skills: null, noAccount: true },
+  ];
+  const u: Record<string, string> = {};
+  for (const [i, p] of people.entries()) {
+    const user = await db.user.create({
+      data: {
+        name: p.name,
+        email: `${p.key}@greencampus.example`,
+        passwordHash: p.noAccount ? null : passwordHash,
+        passwordChangedAt: p.noAccount ? null : ago(100),
+        avatarColor: p.color,
+        skills: p.skills,
+        locale,
+        lastLoginAt: p.noAccount ? null : ago(i % 4),
+      },
+    });
+    u[p.key] = user.id;
+  }
+
+  // ─── Association ──────────────────────────────────────────────────────────
+  const asso = await db.association.create({
     data: {
       name: "Green Campus Collective",
       shortName: "GCC",
@@ -87,130 +95,43 @@ async function main() {
       locale,
       currency: "EUR",
       membershipFeeCents: eur(15),
+      volunteerHourCents: eur(12),
       fiscalYearStartMonth: 9,
     },
   });
+  const A = asso.id;
 
-  // ─── Members ──────────────────────────────────────────────────────────────
-  const people = [
-    {
-      key: "camille",
-      name: "Camille Martin",
-      email: "camille@greencampus.example",
-      role: "ADMIN",
-      boardPosition: "PRESIDENT",
-      title: "President",
-      avatarColor: "emerald",
-      skills: "public speaking, project management",
-    },
-    {
-      key: "yanis",
-      name: "Yanis Benali",
-      email: "yanis@greencampus.example",
-      role: "MANAGER",
-      boardPosition: "TREASURER",
-      title: "Treasurer",
-      avatarColor: "sky",
-      skills: "accounting, spreadsheets",
-    },
-    {
-      key: "lea",
-      name: "Léa Dubois",
-      email: "lea@greencampus.example",
-      role: "MANAGER",
-      boardPosition: "SECRETARY",
-      title: "Secretary",
-      avatarColor: "violet",
-      skills: "writing, organization",
-    },
-    {
-      key: "thomas",
-      name: "Thomas Nguyen",
-      email: "thomas@greencampus.example",
-      role: "MEMBER",
-      boardPosition: "VICE_PRESIDENT",
-      title: "Partnerships lead",
-      avatarColor: "teal",
-      skills: "negotiation, networking",
-    },
-    {
-      key: "ines",
-      name: "Inès Moreau",
-      email: "ines@greencampus.example",
-      role: "MANAGER",
-      boardPosition: null,
-      title: "Events lead",
-      avatarColor: "amber",
-      skills: "event planning, logistics",
-    },
-    {
-      key: "lucas",
-      name: "Lucas Bernard",
-      email: "lucas@greencampus.example",
-      role: "MEMBER",
-      boardPosition: null,
-      title: "Communication lead",
-      avatarColor: "rose",
-      skills: "design, video, social media",
-    },
-    {
-      key: "sarah",
-      name: "Sarah Cohen",
-      email: "sarah@greencampus.example",
-      role: "MEMBER",
-      boardPosition: null,
-      title: "Composting volunteer",
-      avatarColor: "lime",
-      skills: "gardening, biology",
-    },
-    {
-      key: "maxime",
-      name: "Maxime Petit",
-      email: "maxime@greencampus.example",
-      role: "MEMBER",
-      boardPosition: null,
-      title: null,
-      avatarColor: "orange",
-      skills: "photography",
-      noAccount: true,
-    },
-    {
-      key: "chloe",
-      name: "Chloé Laurent",
-      email: "chloe@greencampus.example",
-      role: "MEMBER",
-      boardPosition: null,
-      title: null,
-      avatarColor: "pink",
-      skills: null,
-      noAccount: true,
-    },
-  ] as const;
-
-  const u: Record<string, string> = {};
-  for (const [i, p] of people.entries()) {
-    const user = await db.user.create({
+  const roles: Record<string, { role: string; board?: string; title?: string }> = {
+    camille: { role: "ADMIN", board: "PRESIDENT", title: "President" },
+    yanis: { role: "MANAGER", board: "TREASURER", title: "Treasurer" },
+    lea: { role: "MANAGER", board: "SECRETARY", title: "Secretary" },
+    thomas: { role: "MEMBER", board: "VICE_PRESIDENT", title: "Partnerships lead" },
+    ines: { role: "MANAGER", title: "Events lead" },
+    lucas: { role: "MEMBER", title: "Communication lead" },
+    sarah: { role: "MEMBER", title: "Composting volunteer" },
+    maxime: { role: "MEMBER" },
+    chloe: { role: "MEMBER" },
+  };
+  for (const [i, [key, r]] of Object.entries(roles).entries()) {
+    await db.member.create({
       data: {
-        name: p.name,
-        email: p.email,
-        passwordHash: "noAccount" in p ? null : hash,
-        role: p.role,
-        boardPosition: p.boardPosition,
-        title: p.title,
-        avatarColor: p.avatarColor,
-        skills: p.skills,
-        locale,
+        associationId: A,
+        userId: u[key],
+        role: r.role,
+        boardPosition: r.board ?? null,
+        title: r.title ?? null,
         joinedAt: day(-120 + i * 6),
-        lastLoginAt: "noAccount" in p ? null : ago(i % 4),
       },
     });
-    u[p.key] = user.id;
   }
+
+  const inviteToken = randomBytes(32).toString("base64url");
   await db.invitation.create({
     data: {
-      token: "demo-invitation-maxime",
+      tokenHash: sha256(inviteToken),
       kind: "INVITE",
       userId: u.maxime,
+      associationId: A,
       invitedById: u.camille,
       expiresAt: day(6),
     },
@@ -268,6 +189,7 @@ async function main() {
   for (const [i, p] of poleDefs.entries()) {
     const created = await db.pole.create({
       data: {
+        associationId: A,
         name: p.name,
         color: p.color,
         icon: p.icon,
@@ -283,6 +205,20 @@ async function main() {
     });
     pole[p.key] = created.id;
   }
+
+  await db.joinCode.create({
+    data: {
+      associationId: A,
+      code: JOIN_CODE,
+      label: "Welcome week",
+      role: "MEMBER",
+      poleId: pole.events,
+      maxUses: 50,
+      uses: 3,
+      expiresAt: day(30),
+      createdById: u.camille,
+    },
+  });
 
   // ─── Who does what ────────────────────────────────────────────────────────
   await db.responsibility.createMany({
@@ -300,7 +236,7 @@ async function main() {
       { title: "Empty and maintain the compost bins", frequency: "WEEKLY", ownerId: u.sarah, poleId: pole.green },
       { title: "Renew the liability insurance", frequency: "YEARLY", ownerId: u.camille },
       { title: "Prospect new sponsors", frequency: "QUARTERLY", ownerId: u.thomas, poleId: pole.partners },
-    ],
+    ].map((r) => ({ ...r, associationId: A })),
   });
 
   // ─── Founding checklist ───────────────────────────────────────────────────
@@ -322,12 +258,12 @@ async function main() {
     "lea",
     "lucas",
   ];
-  const steps = foundationSteps(locale);
-  for (const [i, s] of steps.entries()) {
+  for (const [i, s] of foundationSteps(locale).entries()) {
     const status = i === 9 ? "SKIPPED" : i < 11 ? "DONE" : i < 13 ? "IN_PROGRESS" : "TODO";
     await db.foundationStep.create({
       data: {
         ...s,
+        associationId: A,
         status,
         assigneeId: u[owners[i]],
         dueDate: status === "DONE" || status === "SKIPPED" ? null : day(7 + (i - 11) * 5),
@@ -336,7 +272,7 @@ async function main() {
     });
   }
 
-  // ─── Projects ─────────────────────────────────────────────────────────────
+  // ─── Projects & tasks ─────────────────────────────────────────────────────
   type TaskDef = { title: string; status: string; priority?: string; due?: number; who?: string; description?: string };
   const projectDefs: {
     key: string;
@@ -389,7 +325,7 @@ async function main() {
         { title: "Contact 3 speakers on climate topics", status: "IN_PROGRESS", who: "thomas", due: 9 },
         { title: "Design the festival poster", status: "REVIEW", who: "lucas", due: 2 },
         { title: "Request the sound system quote", status: "TODO", who: "chloe", due: 18 },
-        { title: "Recruit 20 volunteers for the day", status: "TODO", priority: "MEDIUM", who: "sarah", due: 40 },
+        { title: "Recruit 20 volunteers for the day", status: "TODO", who: "sarah", due: 40 },
         { title: "Apply for the student life grant", status: "TODO", priority: "URGENT", who: "yanis", due: -2 },
         { title: "Plan the waste sorting stations", status: "TODO", who: "sarah", due: 45 },
       ],
@@ -503,6 +439,7 @@ async function main() {
   for (const p of projectDefs) {
     const created = await db.project.create({
       data: {
+        associationId: A,
         title: p.title,
         description: p.description,
         objectives: p.objectives,
@@ -514,7 +451,6 @@ async function main() {
         dueDate: p.due !== undefined ? day(p.due) : null,
         budgetCents: p.budget ? eur(p.budget) : null,
         color: p.color,
-        createdAt: ago(p.start ? Math.max(1, -p.start + 5) : 3),
         members: { create: [p.lead, ...p.team].map((k) => ({ userId: u[k] })) },
         milestones: {
           create: p.milestones.map((m, i) => ({
@@ -531,6 +467,7 @@ async function main() {
     for (const [i, task] of p.tasks.entries()) {
       const t = await db.task.create({
         data: {
+          associationId: A,
           title: task.title,
           description: task.description,
           status: task.status,
@@ -548,7 +485,6 @@ async function main() {
     }
   }
 
-  // Tasks outside projects
   await db.task.createMany({
     data: [
       {
@@ -585,10 +521,9 @@ async function main() {
         creatorId: u.lea,
       },
       { title: "Clean the storage room", status: "TODO", priority: "LOW", creatorId: u.ines },
-    ],
+    ].map((t) => ({ ...t, associationId: A })),
   });
 
-  // Comments
   await db.taskComment.createMany({
     data: [
       {
@@ -612,7 +547,6 @@ async function main() {
     ],
   });
 
-  // Project updates
   await db.projectUpdate.createMany({
     data: [
       {
@@ -650,77 +584,150 @@ async function main() {
     ],
   });
 
-  // ─── Events ───────────────────────────────────────────────────────────────
-  const ga = await db.event.create({
+  // ─── Requests between poles ───────────────────────────────────────────────
+  const req1 = await db.request.create({
     data: {
-      title: "Constitutive general assembly",
-      type: "GENERAL_ASSEMBLY",
-      startAt: day(-118, 18, 30),
-      endAt: day(-118, 20, 30),
-      location: "Room B204",
-      agenda:
-        "1. Presentation of the project\n2. Adoption of the statutes\n3. Election of the board\n4. Membership fee",
-      minutes:
-        "Present: 9 founding members.\n\n1. Camille presented the project of the association.\n2. The statutes were adopted unanimously.\n3. Elected board: Camille Martin (president), Léa Dubois (secretary), Yanis Benali (treasurer), Thomas Nguyen (vice-president).\n4. The annual membership fee is set to €15.",
-      createdById: u.camille,
+      associationId: A,
+      title: "Design a poster for the repair café",
+      description:
+        "A4 poster + Instagram square. Date to be confirmed, leave a placeholder. Needed for the next board meeting.",
+      priority: "HIGH",
+      dueDate: day(9),
+      poleId: pole.com,
+      fromPoleId: pole.green,
+      projectId: project.repair,
+      requesterId: u.camille,
+      createdAt: ago(1),
     },
   });
-  const board = await db.event.create({
+  await db.request.create({
     data: {
-      title: "Monthly board meeting",
-      type: "BOARD_MEETING",
-      startAt: day(5, 19, 0),
-      endAt: day(5, 20, 30),
-      location: "Café du Campus",
-      agenda: "1. Festival budget\n2. Grant application\n3. Forum of associations",
-      createdById: u.lea,
-    },
-  });
-  const workshop = await db.event.create({
-    data: {
-      title: "Composting volunteer training",
-      type: "WORKSHOP",
-      startAt: day(8, 12, 30),
-      endAt: day(8, 13, 30),
-      location: "Cafeteria garden",
-      poleId: pole.green,
-      projectId: project.compost,
-      createdById: u.sarah,
-    },
-  });
-  const poleMeeting = await db.event.create({
-    data: {
-      title: "Events pole meeting",
-      type: "POLE_MEETING",
-      startAt: day(2, 18, 0),
-      location: "Online",
-      poleId: pole.events,
-      createdById: u.ines,
-    },
-  });
-  const festival = await db.event.create({
-    data: {
-      title: "Spring Climate Festival",
-      type: "EVENT",
-      startAt: day(62, 10, 0),
-      endAt: day(62, 23, 0),
-      location: "Main lawn",
+      associationId: A,
+      title: "Find two sponsors for the festival food stands",
+      description: "Local bakeries or organic shops. We can offer their logo on the poster and a free stand.",
+      dueDate: day(21),
+      poleId: pole.partners,
+      fromPoleId: pole.events,
       projectId: project.festival,
-      poleId: pole.events,
-      description: "Talks, workshops, food stands and a concert. Free and open to all students!",
-      createdById: u.ines,
+      requesterId: u.ines,
+      createdAt: ago(2),
     },
   });
-  await db.event.create({
+  const takenTask = await db.task.create({
     data: {
-      title: "Welcome week stand",
-      type: "EVENT",
-      startAt: day(-67, 10, 0),
-      endAt: day(-67, 17, 0),
-      location: "Main hall",
-      projectId: project.welcome,
-      createdById: u.camille,
+      associationId: A,
+      title: "Check the festival budget before the grant application",
+      status: "IN_PROGRESS",
+      priority: "URGENT",
+      dueDate: day(2),
+      poleId: pole.treasury,
+      projectId: project.festival,
+      assigneeId: u.yanis,
+      creatorId: u.ines,
     },
+  });
+  await db.request.create({
+    data: {
+      associationId: A,
+      title: "Check the festival budget before the grant application",
+      priority: "URGENT",
+      dueDate: day(2),
+      status: "TAKEN",
+      poleId: pole.treasury,
+      fromPoleId: pole.events,
+      projectId: project.festival,
+      requesterId: u.ines,
+      takenById: u.yanis,
+      takenAt: ago(0.8),
+      taskId: takenTask.id,
+      createdAt: ago(1.2),
+    },
+  });
+  const doneTask = await db.task.create({
+    data: {
+      associationId: A,
+      title: "Share the welcome week photos",
+      status: "DONE",
+      completedAt: ago(40),
+      poleId: pole.com,
+      assigneeId: u.lucas,
+      creatorId: u.camille,
+    },
+  });
+  await db.request.create({
+    data: {
+      associationId: A,
+      title: "Share the welcome week photos",
+      status: "DONE",
+      poleId: pole.com,
+      requesterId: u.camille,
+      takenById: u.lucas,
+      takenAt: ago(44),
+      closedAt: ago(40),
+      taskId: doneTask.id,
+      createdAt: ago(45),
+    },
+  });
+
+  // ─── Events ───────────────────────────────────────────────────────────────
+  const ev = (data: Record<string, unknown>) => db.event.create({ data: { associationId: A, ...data } as never });
+  const ga = await ev({
+    title: "Constitutive general assembly",
+    type: "GENERAL_ASSEMBLY",
+    startAt: day(-118, 18, 30),
+    endAt: day(-118, 20, 30),
+    location: "Room B204",
+    agenda: "1. Presentation of the project\n2. Adoption of the statutes\n3. Election of the board\n4. Membership fee",
+    minutes:
+      "Present: 9 founding members.\n\n1. Camille presented the project of the association.\n2. The statutes were adopted unanimously.\n3. Elected board: Camille Martin (president), Léa Dubois (secretary), Yanis Benali (treasurer), Thomas Nguyen (vice-president).\n4. The annual membership fee is set to €15.",
+    createdById: u.camille,
+  });
+  const board = await ev({
+    title: "Monthly board meeting",
+    type: "BOARD_MEETING",
+    startAt: day(5, 19, 0),
+    endAt: day(5, 20, 30),
+    location: "Café du Campus",
+    agenda: "1. Festival budget\n2. Grant application\n3. Forum of associations",
+    createdById: u.lea,
+  });
+  const workshop = await ev({
+    title: "Composting volunteer training",
+    type: "WORKSHOP",
+    startAt: day(8, 12, 30),
+    endAt: day(8, 13, 30),
+    location: "Cafeteria garden",
+    poleId: pole.green,
+    projectId: project.compost,
+    createdById: u.sarah,
+  });
+  const poleMeeting = await ev({
+    title: "Events pole meeting",
+    type: "POLE_MEETING",
+    startAt: day(2, 18, 0),
+    location: "Online",
+    poleId: pole.events,
+    createdById: u.ines,
+  });
+  const festival = await ev({
+    title: "Spring Climate Festival",
+    type: "EVENT",
+    startAt: day(62, 10, 0),
+    endAt: day(62, 23, 0),
+    location: "Main lawn",
+    projectId: project.festival,
+    poleId: pole.events,
+    description: "Talks, workshops, food stands and a concert. Free and open to all students!",
+    createdById: u.ines,
+  });
+  await ev({
+    title: "Welcome week stand",
+    type: "EVENT",
+    startAt: day(-67, 10, 0),
+    endAt: day(-67, 17, 0),
+    location: "Main hall",
+    projectId: project.welcome,
+    createdById: u.camille,
   });
   const rsvps: [string, string, string][] = [
     [ga.id, "camille", "GOING"],
@@ -743,6 +750,95 @@ async function main() {
   ];
   for (const [eventId, k, status] of rsvps) await db.eventAttendee.create({ data: { eventId, userId: u[k], status } });
 
+  // ─── Votes ────────────────────────────────────────────────────────────────
+  const datePoll = await db.poll.create({
+    data: {
+      associationId: A,
+      question: "Which Saturday for the Spring Climate Festival?",
+      description: "The university can lend us the main lawn on these three dates.",
+      closesAt: day(6, 20, 0),
+      createdById: u.ines,
+      options: {
+        create: [
+          { label: "March 21", order: 0 },
+          { label: "April 4", order: 1 },
+          { label: "April 18", order: 2 },
+        ],
+      },
+    },
+    include: { options: true },
+  });
+  for (const [k, o] of [
+    ["ines", 1],
+    ["lucas", 1],
+    ["sarah", 0],
+    ["thomas", 1],
+    ["lea", 2],
+  ] as const) {
+    await db.pollVote.create({ data: { pollId: datePoll.id, optionId: datePoll.options[o].id, userId: u[k] } });
+  }
+  const budgetPoll = await db.poll.create({
+    data: {
+      associationId: A,
+      question: "Do we approve the 2026-2027 budget presented by the treasurer?",
+      createdById: u.yanis,
+      closedAt: ago(20),
+      options: {
+        create: [
+          { label: "Yes", order: 0 },
+          { label: "No", order: 1 },
+          { label: "Abstain", order: 2 },
+        ],
+      },
+    },
+    include: { options: true },
+  });
+  for (const [k, o] of [
+    ["camille", 0],
+    ["yanis", 0],
+    ["lea", 0],
+    ["thomas", 0],
+    ["ines", 2],
+  ] as const) {
+    await db.pollVote.create({ data: { pollId: budgetPoll.id, optionId: budgetPoll.options[o].id, userId: u[k] } });
+  }
+
+  // ─── Volunteer time ───────────────────────────────────────────────────────
+  const timeDefs: [string, number, number, string, string | null, string | null][] = [
+    ["sarah", -3, 90, "Compost bins maintenance", "green", "compost"],
+    ["sarah", -10, 120, "Compost bins maintenance", "green", "compost"],
+    ["sarah", -17, 90, "Compost bins maintenance", "green", "compost"],
+    ["maxime", -12, 150, "Signage installation", "green", "compost"],
+    ["ines", -2, 180, "Festival program", "events", "festival"],
+    ["ines", -9, 120, "Venue visit", "events", "festival"],
+    ["lucas", -1, 150, "Festival poster", "com", "festival"],
+    ["lucas", -6, 60, "Instagram posts", "com", "web"],
+    ["lucas", -13, 90, "Logo", "com", "web"],
+    ["yanis", -4, 120, "Accounting", "treasury", null],
+    ["yanis", -30, 90, "Grant application", "treasury", "festival"],
+    ["thomas", -5, 60, "Calls with speakers", "partners", "festival"],
+    ["thomas", -15, 90, "Partnership kit draft", "partners", "partners"],
+    ["lea", -7, 90, "Board meeting minutes", null, null],
+    ["camille", -8, 120, "Board meeting preparation", null, null],
+    ["camille", -67, 420, "Welcome week stand", "events", "welcome"],
+    ["ines", -67, 420, "Welcome week stand", "events", "welcome"],
+    ["lucas", -67, 240, "Welcome week stand", "events", "welcome"],
+    ["chloe", -67, 180, "Welcome week stand", "events", "welcome"],
+  ];
+  for (const [k, offset, minutes, description, p, pr] of timeDefs) {
+    await db.timeEntry.create({
+      data: {
+        associationId: A,
+        userId: u[k],
+        date: day(offset),
+        minutes,
+        description,
+        poleId: p ? pole[p] : null,
+        projectId: pr ? project[pr] : null,
+      },
+    });
+  }
+
   // ─── Money ────────────────────────────────────────────────────────────────
   const tx = (
     label: string,
@@ -753,20 +849,26 @@ async function main() {
     extra: Record<string, unknown> = {},
   ) =>
     db.transaction.create({
-      data: { label, type, amountCents: eur(amount), category, date: day(offset), recordedById: u.yanis, ...extra },
+      data: {
+        associationId: A,
+        label,
+        type,
+        amountCents: eur(amount),
+        category,
+        date: day(offset),
+        recordedById: u.yanis,
+        ...extra,
+      },
     });
 
   for (const [i, k] of ["camille", "yanis", "lea", "thomas", "ines", "lucas", "sarah"].entries()) {
-    const t = await tx(
-      `Membership fee ${year} — ${people.find((p) => p.key === k)!.name}`,
-      "INCOME",
-      15,
-      "MEMBERSHIP",
-      -100 + i * 3,
-      { paymentMethod: i % 2 ? "CASH" : "TRANSFER" },
-    );
-    await db.membership.create({
+    const name = people.find((p) => p.key === k)!.name;
+    const t = await tx(`Membership fee ${year} — ${name}`, "INCOME", 15, "MEMBERSHIP", -100 + i * 3, {
+      paymentMethod: i % 2 ? "CASH" : "TRANSFER",
+    });
+    await db.dues.create({
       data: {
+        associationId: A,
         userId: u[k],
         year,
         amountCents: eur(15),
@@ -825,7 +927,7 @@ async function main() {
     paymentMethod: "CARD",
   });
 
-  // ─── Documents (small demo files) ─────────────────────────────────────────
+  // ─── Documents ────────────────────────────────────────────────────────────
   const uploadDir = path.resolve(process.cwd(), process.env.UPLOAD_DIR ?? "./data/uploads");
   await mkdir(uploadDir, { recursive: true });
   const files = [
@@ -849,6 +951,7 @@ async function main() {
     await writeFile(path.join(uploadDir, storedName), f.content);
     await db.document.create({
       data: {
+        associationId: A,
         title: f.title,
         category: f.category,
         fileName: f.fileName,
@@ -881,10 +984,10 @@ async function main() {
         url: "https://example.org/volunteer-handbook",
         uploadedById: u.camille,
       },
-    ],
+    ].map((d) => ({ ...d, associationId: A })),
   });
 
-  // ─── Announcements ────────────────────────────────────────────────────────
+  // ─── Announcements, notifications, activity ───────────────────────────────
   await db.announcement.createMany({
     data: [
       {
@@ -900,19 +1003,67 @@ async function main() {
         authorId: u.camille,
         createdAt: ago(6),
       },
-    ],
+    ].map((a) => ({ ...a, associationId: A })),
   });
 
-  // ─── Activity ─────────────────────────────────────────────────────────────
+  const note = (
+    userId: string,
+    type: string,
+    actorId: string,
+    data: Record<string, string>,
+    link: string,
+    hoursAgo: number,
+    read = false,
+  ) =>
+    db.notification.create({
+      data: {
+        userId,
+        associationId: A,
+        type,
+        actorId,
+        data: JSON.stringify({ association: asso.name, ...data }),
+        link,
+        createdAt: new Date(now.getTime() - hoursAgo * 3600_000),
+        readAt: read ? now : null,
+      },
+    });
+  await note(
+    u.camille,
+    "request.taken",
+    u.yanis,
+    { actor: "Yanis Benali", title: "Check the festival budget before the grant application" },
+    `/requests`,
+    18,
+  );
+  await note(
+    u.camille,
+    "poll.new",
+    u.ines,
+    { actor: "Inès Moreau", title: "Which Saturday for the Spring Climate Festival?" },
+    `/polls#poll-${datePoll.id}`,
+    26,
+  );
+  await note(
+    u.camille,
+    "task.comment",
+    u.lea,
+    { actor: "Léa Dubois", title: "Answer the city hall about the forum of associations" },
+    `/tasks`,
+    50,
+    true,
+  );
+  await note(
+    u.lucas,
+    "request.new",
+    u.camille,
+    { actor: "Camille Martin", pole: "Communication", title: req1.title },
+    `/requests/${req1.id}`,
+    24,
+  );
+
   await db.activity.createMany({
     data: [
-      {
-        actorId: u.camille,
-        action: "created",
-        entityType: "workspace",
-        entityLabel: "Green Campus Collective",
-        createdAt: ago(10),
-      },
+      { actorId: u.camille, action: "created", entityType: "workspace", entityLabel: asso.name, createdAt: ago(10) },
       {
         actorId: u.sarah,
         action: "posted",
@@ -929,27 +1080,21 @@ async function main() {
         entityLabel: "Website & social media launch",
         createdAt: ago(3),
       },
+      { actorId: u.ines, action: "created", entityType: "poll", entityLabel: datePoll.question, createdAt: ago(1.1) },
       {
         actorId: u.yanis,
+        action: "took",
+        entityType: "request",
+        entityLabel: "Check the festival budget before the grant application",
+        createdAt: ago(0.8),
+      },
+      {
+        actorId: u.camille,
         action: "created",
-        entityType: "transaction",
-        entityLabel: "Poster printing — festival",
-        createdAt: ago(3),
-      },
-      {
-        actorId: u.thomas,
-        action: "commented",
-        entityType: "task",
-        entityId: taskIds[1],
-        entityLabel: "Draft the festival program",
-        createdAt: ago(2),
-      },
-      {
-        actorId: u.ines,
-        action: "posted",
-        entityType: "announcement",
-        entityLabel: "Festival: we need volunteers! 🌱",
-        createdAt: ago(2),
+        entityType: "request",
+        entityId: req1.id,
+        entityLabel: req1.title,
+        createdAt: ago(1),
       },
       {
         actorId: u.ines,
@@ -975,12 +1120,83 @@ async function main() {
         entityLabel: "Design the festival poster",
         createdAt: ago(0.5),
       },
-    ],
+    ].map((a) => ({ ...a, associationId: A })),
   });
 
-  console.log("✔ Demo data loaded.");
-  console.log(`  Sign in with camille@greencampus.example / ${PASSWORD} (administrator)`);
-  console.log(`  Other accounts: yanis@, lea@, thomas@, ines@, lucas@, sarah@greencampus.example (same password)`);
+  // ─── A second association, to show switching ──────────────────────────────
+  const robot = await db.association.create({
+    data: {
+      name: "Lyon Robotics Club",
+      shortName: "LRC",
+      legalForm: "Loi 1901",
+      city: "Lyon",
+      country: "France",
+      accentColor: "sky",
+      locale,
+      currency: "EUR",
+    },
+  });
+  await db.member.create({
+    data: { associationId: robot.id, userId: u.thomas, role: "ADMIN", boardPosition: "PRESIDENT" },
+  });
+  await db.member.create({ data: { associationId: robot.id, userId: u.camille, role: "MEMBER" } });
+  const robotPole = await db.pole.create({
+    data: {
+      associationId: robot.id,
+      name: "Competition team",
+      color: "sky",
+      icon: "trophy",
+      members: { create: [{ userId: u.thomas, role: "LEAD" }, { userId: u.camille }] },
+    },
+  });
+  const robotProject = await db.project.create({
+    data: {
+      associationId: robot.id,
+      title: "Regional robotics cup",
+      status: "IN_PROGRESS",
+      poleId: robotPole.id,
+      leadId: u.thomas,
+      startDate: day(-20),
+      dueDate: day(40),
+      color: "sky",
+    },
+  });
+  await db.task.createMany({
+    data: [
+      {
+        associationId: robot.id,
+        title: "Order the motor controllers",
+        status: "IN_PROGRESS",
+        assigneeId: u.thomas,
+        projectId: robotProject.id,
+        dueDate: day(3),
+      },
+      {
+        associationId: robot.id,
+        title: "Write the team presentation",
+        status: "TODO",
+        assigneeId: u.camille,
+        projectId: robotProject.id,
+        dueDate: day(10),
+      },
+    ],
+  });
+  await db.event.create({
+    data: {
+      associationId: robot.id,
+      title: "Workshop night",
+      type: "WORKSHOP",
+      startAt: day(3, 19, 0),
+      location: "FabLab",
+      createdById: u.thomas,
+    },
+  });
+
+  console.log("✔ Demo data loaded.\n");
+  console.log(`  Sign in:     camille@greencampus.example / ${PASSWORD} (administrator, member of 2 associations)`);
+  console.log(`  Others:      yanis@, lea@, thomas@, ines@, lucas@, sarah@greencampus.example (same password)`);
+  console.log(`  Join code:   ${JOIN_CODE} (create a new account and enter it to join the demo association)`);
+  console.log(`  Invitation:  /invite/${inviteToken}  (activates Maxime's account, valid 6 days)`);
 }
 
 main()

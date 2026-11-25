@@ -2,11 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarDays, ChevronLeft, Crown, KeyRound, Link2, Mail, Pencil, Phone, Power, Rocket } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can, isAdmin } from "@/lib/permissions";
-import { getAssociation } from "@/lib/queries";
 import { loadProjects } from "@/lib/project-queries";
 import { loadTaskCards } from "@/lib/task-queries";
 import { colorFor, colorOf } from "@/lib/colors";
@@ -28,24 +26,43 @@ import { RichText } from "@/components/ui/rich-text";
 export const metadata: Metadata = { title: "Member" };
 
 export default async function MemberPage(props: PageProps<"/members/[id]">) {
-  const user = await requireUser();
+  const { user, db, association } = await requireContext();
   const { t, locale } = await getI18n();
   const { id } = await props.params;
-  const member = await db.user.findUnique({
-    where: { id },
+  const membership = await db.member.findUnique({
+    where: { associationId_userId: { associationId: association.id, userId: id } },
     include: {
-      poleMemberships: { include: { pole: true } },
-      responsibilities: { include: { pole: { select: { name: true, color: true } } } },
-      foundationSteps: { where: { status: { notIn: ["DONE", "SKIPPED"] } }, orderBy: { order: "asc" } },
-      memberships: { orderBy: { year: "desc" } },
+      user: {
+        include: {
+          poleMemberships: { where: { pole: { associationId: association.id } }, include: { pole: true } },
+          responsibilities: {
+            where: { associationId: association.id },
+            include: { pole: { select: { name: true, color: true } } },
+          },
+          foundationSteps: {
+            where: { associationId: association.id, status: { notIn: ["DONE", "SKIPPED"] } },
+            orderBy: { order: "asc" },
+          },
+          dues: { where: { associationId: association.id }, orderBy: { year: "desc" } },
+        },
+      },
     },
   });
-  if (!member) notFound();
+  if (!membership) notFound();
+  const { user: account, ...memberInfo } = membership;
+  const member = {
+    ...account,
+    memberships: account.dues,
+    title: memberInfo.title,
+    role: memberInfo.role,
+    boardPosition: memberInfo.boardPosition,
+    status: memberInfo.status,
+    joinedAt: memberInfo.joinedAt,
+  };
 
-  const [projects, tasks, association] = await Promise.all([
-    loadProjects({ OR: [{ leadId: id }, { members: { some: { userId: id } } }], status: { notIn: ["CANCELLED"] } }),
-    loadTaskCards({ assigneeId: id, status: { not: "DONE" } }, user),
-    getAssociation(),
+  const [projects, tasks] = await Promise.all([
+    loadProjects(db, { OR: [{ leadId: id }, { members: { some: { userId: id } } }], status: { notIn: ["CANCELLED"] } }),
+    loadTaskCards(db, { assigneeId: id, status: { not: "DONE" } }, user),
   ]);
   const admin = isAdmin(user);
   const canEdit = can.editProfile(user, id);

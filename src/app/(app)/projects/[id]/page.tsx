@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarDays, ChevronLeft, FileText, Pencil, Plus, Trash2, UserMinus, Wallet } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext, type CurrentUser } from "@/lib/context";
+import type { TenantDb } from "@/lib/tenant";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
-import { getAssociation, getMemberOptions, getPoleOptions, getProjectOptions, poleLeadIds } from "@/lib/queries";
+import { getMemberOptions, getPoleOptions, getProjectOptions, poleLeadIds } from "@/lib/queries";
 import { loadTaskCards } from "@/lib/task-queries";
 import { projectHealth, projectProgress } from "@/lib/progress";
 import { colorFor, colorOf } from "@/lib/colors";
@@ -44,7 +44,7 @@ export const metadata: Metadata = { title: "Project" };
 const TABS = ["overview", "tasks", "updates", "team", "budget"] as const;
 
 export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
-  const user = await requireUser();
+  const { user, db, association } = await requireContext();
   const { t, locale } = await getI18n();
   const { id } = await props.params;
   const sp = await props.searchParams;
@@ -56,7 +56,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
       pole: { select: { id: true, name: true, color: true, icon: true } },
       lead: { select: { id: true, name: true, avatarColor: true } },
       members: {
-        include: { user: { select: { id: true, name: true, avatarColor: true, title: true } } },
+        include: { user: { select: { id: true, name: true, avatarColor: true } } },
         orderBy: { joinedAt: "asc" },
       },
       milestones: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
@@ -69,13 +69,12 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
   });
   if (!project) notFound();
 
-  const canEdit = can.editProject(user, { leadId: project.leadId, poleLeadIds: await poleLeadIds(project.poleId) });
+  const canEdit = can.editProject(user, { leadId: project.leadId, poleLeadIds: await poleLeadIds(db, project.poleId) });
   const isTeam = project.members.some((m) => m.userId === user.id);
-  const [members, poles, projects, association] = await Promise.all([
-    getMemberOptions(),
-    getPoleOptions(),
-    getProjectOptions(),
-    getAssociation(),
+  const [members, poles, projects] = await Promise.all([
+    getMemberOptions(db),
+    getPoleOptions(db),
+    getProjectOptions(db),
   ]);
   const progress = projectProgress(project);
   const health = projectHealth({ ...project, progress });
@@ -369,6 +368,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
           }
           poles={poles}
           t={t}
+          db={db}
         />
       )}
 
@@ -425,9 +425,7 @@ export default async function ProjectPage(props: PageProps<"/projects/[id]">) {
                     <Avatar name={m.user.name} color={m.user.avatarColor} />
                     <Link href={`/members/${m.userId}`} className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium hover:underline">{m.user.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {m.role ?? m.user.title ?? t.common.member}
-                      </p>
+                      <p className="truncate text-xs text-muted-foreground">{m.role ?? t.common.member}</p>
                     </Link>
                     {m.userId === project.leadId && <Badge color="indigo">{t.common.lead}</Badge>}
                     {canEdit && m.userId !== project.leadId && (
@@ -587,16 +585,18 @@ async function TasksTab({
   projects,
   poles,
   t,
+  db,
 }: {
   projectId: string;
   poleId: string | null;
-  user: Awaited<ReturnType<typeof requireUser>>;
+  user: CurrentUser;
+  db: TenantDb;
   members: { id: string; name: string }[];
   projects: { id: string; title: string }[];
   poles: { id: string; name: string }[];
   t: Awaited<ReturnType<typeof getI18n>>["t"];
 }) {
-  const tasks = await loadTaskCards({ projectId }, user);
+  const tasks = await loadTaskCards(db, { projectId }, user);
   return (
     <div>
       <div className="mb-4 flex justify-end">

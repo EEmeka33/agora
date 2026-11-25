@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { Database, Download, FileJson, FileSpreadsheet } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { Database, FileJson, FileSpreadsheet, FolderOpen } from "lucide-react";
+import { db as globalDb } from "@/lib/db";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { isAdmin } from "@/lib/permissions";
-import { getAssociation } from "@/lib/queries";
+import { mailEnabled } from "@/lib/mail";
 import { databaseFile, uploadDir } from "@/lib/uploads";
 import { updateMember } from "@/actions/members";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,18 +14,29 @@ import { ThemePicker } from "@/components/layout/theme";
 import { memberValues } from "@/components/members/member-values";
 import { LanguagePicker, PasswordForm, ProfileForm } from "@/components/settings/profile-forms";
 import { AssociationForm } from "@/components/settings/association-form";
+import {
+  AssociationList,
+  CalendarLink,
+  DeleteAccountForm,
+  NotificationSettingsForm,
+  SessionList,
+} from "@/components/settings/account-forms";
 
 export const metadata: Metadata = { title: "Settings" };
 
-const TABS = ["profile", "security", "appearance", "association", "data"] as const;
+const TABS = ["profile", "security", "notifications", "appearance", "association", "data"] as const;
 
 export default async function SettingsPage(props: PageProps<"/settings">) {
-  const user = await requireUser();
+  const { user, association, associations } = await requireContext();
   const { t } = await getI18n();
   const sp = await props.searchParams;
   const admin = isAdmin(user);
   const tabs = TABS.filter((k) => admin || (k !== "association" && k !== "data"));
   const tab = tabs.includes(sp.tab as never) ? (sp.tab as (typeof TABS)[number]) : "profile";
+  const me = await globalDb.user.findUniqueOrThrow({
+    where: { id: user.id },
+    include: { sessions: { where: { expiresAt: { gt: new Date() } }, orderBy: { lastSeenAt: "desc" } } },
+  });
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -38,17 +49,105 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
         }))}
       />
 
-      {tab === "profile" && <ProfileTab userId={user.id} t={t} />}
-
-      {tab === "security" && (
+      {tab === "profile" && (
         <Card>
           <CardHeader>
-            <CardTitle>{t.settings.securityTitle}</CardTitle>
+            <div>
+              <CardTitle>{t.settings.profileTitle}</CardTitle>
+              <CardDescription>{t.settings.profileHint}</CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
-            <PasswordForm />
+            <ProfileForm
+              action={updateMember.bind(null, user.id)}
+              member={memberValues({
+                ...me,
+                title: user.title,
+                role: user.role,
+                boardPosition: user.boardPosition,
+                joinedAt: null,
+              })}
+            />
           </CardContent>
         </Card>
+      )}
+
+      {tab === "security" && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.settings.securityTitle}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PasswordForm />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>{t.settings.sessionsTitle}</CardTitle>
+                <CardDescription>{t.settings.sessionsHint}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <SessionList
+                sessions={me.sessions.map((s) => ({
+                  id: s.id,
+                  userAgent: s.userAgent,
+                  ip: s.ip,
+                  lastSeenAt: s.lastSeenAt,
+                  current: s.id === user.sessionId,
+                }))}
+              />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>{t.settings.associationsTitle}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AssociationList associations={associations} />
+            </CardContent>
+          </Card>
+          <Card className="border-destructive/30">
+            <CardHeader>
+              <div>
+                <CardTitle className="text-destructive">{t.settings.deleteTitle}</CardTitle>
+                <CardDescription>{t.settings.deleteText}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <DeleteAccountForm />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {tab === "notifications" && (
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>{t.settings.notificationsTitle}</CardTitle>
+                <CardDescription>{t.settings.notificationsHint}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <NotificationSettingsForm emailNotifications={me.emailNotifications} mailEnabled={mailEnabled()} />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>{t.settings.calendarTitle}</CardTitle>
+                <CardDescription>{t.settings.calendarHint}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <CalendarLink hasLink={!!me.calendarTokenHash} />
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {tab === "appearance" && (
@@ -72,7 +171,43 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
         </Card>
       )}
 
-      {tab === "association" && admin && <AssociationTab t={t} />}
+      {tab === "association" && admin && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>{t.settings.associationTitle}</CardTitle>
+              <CardDescription>{t.settings.associationHint}</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <AssociationForm
+              value={{
+                name: association.name,
+                shortName: association.shortName,
+                tagline: association.tagline,
+                purpose: association.purpose,
+                legalForm: association.legalForm,
+                registrationNumber: association.registrationNumber,
+                siret: association.siret,
+                foundedAt: association.foundedAt,
+                email: association.email,
+                phone: association.phone,
+                website: association.website,
+                address: association.address,
+                postalCode: association.postalCode,
+                city: association.city,
+                country: association.country,
+                accentColor: association.accentColor,
+                locale: association.locale,
+                currency: association.currency,
+                membershipFeeCents: association.membershipFeeCents,
+                volunteerHourCents: association.volunteerHourCents,
+                fiscalYearStartMonth: association.fiscalYearStartMonth,
+              }}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {tab === "data" && admin && (
         <Card>
@@ -90,6 +225,9 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
               <a href="/api/export/transactions" className={buttonVariants({ variant: "outline" })}>
                 <FileSpreadsheet /> {t.settings.exportCsv}
               </a>
+              <a href="/api/export/members" className={buttonVariants({ variant: "outline" })}>
+                <FileSpreadsheet /> {t.members.exportCsv}
+              </a>
             </div>
             <div className="rounded-xl bg-muted/60 p-4 text-sm">
               <p className="mb-2 flex items-center gap-2 font-medium">
@@ -97,87 +235,12 @@ export default async function SettingsPage(props: PageProps<"/settings">) {
               </p>
               <code className="block rounded-lg bg-card px-3 py-2 font-mono text-xs break-all">{databaseFile()}</code>
               <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                <Download className="size-3.5" /> {uploadDir()}
+                <FolderOpen className="size-3.5" /> {uploadDir()}
               </p>
             </div>
           </CardContent>
         </Card>
       )}
     </div>
-  );
-}
-
-async function ProfileTab({ userId, t }: { userId: string; t: Awaited<ReturnType<typeof getI18n>>["t"] }) {
-  const me = await db.user.findUniqueOrThrow({ where: { id: userId } });
-  return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>{t.settings.profileTitle}</CardTitle>
-          <CardDescription>{t.settings.profileHint}</CardDescription>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <ProfileForm action={updateMember.bind(null, userId)} member={memberValues(me)} />
-      </CardContent>
-    </Card>
-  );
-}
-
-async function AssociationTab({ t }: { t: Awaited<ReturnType<typeof getI18n>>["t"] }) {
-  const association = await db.association.findFirst();
-  const fallback = await getAssociation();
-  const value = association ?? {
-    ...fallback,
-    shortName: null,
-    tagline: null,
-    purpose: null,
-    registrationNumber: null,
-    siret: null,
-    foundedAt: null,
-    email: null,
-    phone: null,
-    website: null,
-    address: null,
-    postalCode: null,
-    city: null,
-    country: null,
-    locale: "en",
-  };
-  return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>{t.settings.associationTitle}</CardTitle>
-          <CardDescription>{t.settings.associationHint}</CardDescription>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <AssociationForm
-          value={{
-            name: value.name,
-            shortName: value.shortName,
-            tagline: value.tagline,
-            purpose: value.purpose,
-            legalForm: value.legalForm,
-            registrationNumber: value.registrationNumber,
-            siret: value.siret,
-            foundedAt: value.foundedAt,
-            email: value.email,
-            phone: value.phone,
-            website: value.website,
-            address: value.address,
-            postalCode: value.postalCode,
-            city: value.city,
-            country: value.country,
-            accentColor: value.accentColor,
-            locale: value.locale,
-            currency: value.currency,
-            membershipFeeCents: value.membershipFeeCents,
-            fiscalYearStartMonth: value.fiscalYearStartMonth,
-          }}
-        />
-      </CardContent>
-    </Card>
   );
 }

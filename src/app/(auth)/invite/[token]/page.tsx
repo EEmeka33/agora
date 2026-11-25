@@ -5,6 +5,7 @@ import { connection } from "next/server";
 import { LinkIcon } from "lucide-react";
 import { db } from "@/lib/db";
 import { getI18n } from "@/lib/i18n/server";
+import { sha256 } from "@/lib/tokens";
 import { buttonVariants } from "@/components/ui/button";
 import { acceptInvitation } from "@/actions/auth";
 import { InviteForm } from "./invite-form";
@@ -23,8 +24,10 @@ async function Invite({ params }: { params: PageProps<"/invite/[token]">["params
   await connection();
   const { t } = await getI18n();
   const { token } = await params;
-  const invitation = await db.invitation.findUnique({ where: { token }, include: { user: true } });
-  const association = await db.association.findFirst({ select: { name: true } });
+  const invitation = await db.invitation.findUnique({
+    where: { tokenHash: sha256(token) },
+    include: { user: true, association: { select: { name: true } } },
+  });
   const valid = invitation && !invitation.usedAt && invitation.expiresAt > new Date();
 
   if (!valid) {
@@ -46,7 +49,7 @@ async function Invite({ params }: { params: PageProps<"/invite/[token]">["params
   return (
     <div>
       <h1 className="text-3xl font-semibold tracking-tight">
-        {reset ? t.auth.invite.resetTitle : t.auth.invite.title(association?.name ?? "Agora")}
+        {reset ? t.auth.invite.resetTitle : t.auth.invite.title(invitation.association?.name ?? "Agora")}
       </h1>
       <p className="mt-2 mb-8 text-muted-foreground">{reset ? t.auth.invite.resetSubtitle : t.auth.invite.subtitle}</p>
       <InviteForm

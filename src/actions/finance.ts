@@ -1,7 +1,6 @@
 "use server";
 
-import { db } from "@/lib/db";
-import { ensure, fail, ok, reader, withUser, type ActionState } from "@/lib/action-utils";
+import { assertRefs, ensure, fail, ok, reader, withUser, type ActionState } from "@/lib/action-utils";
 import { PAYMENT_METHODS, TRANSACTION_CATEGORIES, TRANSACTION_TYPES } from "@/lib/constants";
 import { can } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
@@ -28,19 +27,27 @@ function validate(data: ReturnType<typeof readTransaction>, t: Dictionary) {
   if (!data.label) errors.label = t.validation.required;
   if (data.amountCents === null || data.amountCents <= 0) errors.amount = t.validation.invalidAmount;
   if (!data.date) errors.date = t.validation.invalidDate;
-  return Object.keys(errors).length ? fail(t.validation.required, errors) : null;
+  return Object.keys(errors).length ? fail(Object.values(errors)[0], errors) : null;
 }
 
 export async function createTransaction(_prev: ActionState, fd: FormData) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db, association } = ctx;
     ensure(can.manageFinance(user), t);
     const data = readTransaction(fd);
     const invalid = validate(data, t);
     if (invalid) return invalid;
+    await assertRefs(ctx, { poleId: data.poleId, projectId: data.projectId });
     const tx = await db.transaction.create({
-      data: { ...data, amountCents: data.amountCents!, date: data.date!, recordedById: user.id },
+      data: {
+        ...data,
+        amountCents: data.amountCents!,
+        date: data.date!,
+        associationId: association.id,
+        recordedById: user.id,
+      },
     });
-    await logActivity({
+    await logActivity(ctx, {
       actorId: user.id,
       action: "created",
       entityType: "transaction",
@@ -52,13 +59,15 @@ export async function createTransaction(_prev: ActionState, fd: FormData) {
 }
 
 export async function updateTransaction(id: string, _prev: ActionState, fd: FormData) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db } = ctx;
     ensure(can.manageFinance(user), t);
     const data = readTransaction(fd);
     const invalid = validate(data, t);
     if (invalid) return invalid;
+    await assertRefs(ctx, { poleId: data.poleId, projectId: data.projectId });
     await db.transaction.update({ where: { id }, data: { ...data, amountCents: data.amountCents!, date: data.date! } });
-    await logActivity({
+    await logActivity(ctx, {
       actorId: user.id,
       action: "updated",
       entityType: "transaction",
@@ -70,17 +79,19 @@ export async function updateTransaction(id: string, _prev: ActionState, fd: Form
 }
 
 export async function deleteTransaction(id: string) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db } = ctx;
     ensure(can.manageFinance(user), t);
     const tx = await db.transaction.delete({ where: { id } });
-    await logActivity({ actorId: user.id, action: "deleted", entityType: "transaction", entityLabel: tx.label });
+    await logActivity(ctx, { actorId: user.id, action: "deleted", entityType: "transaction", entityLabel: tx.label });
     return ok(t.common.deleted);
   });
 }
 
 /** Records a member's yearly fee and the matching income transaction. */
 export async function recordMembership(_prev: ActionState, fd: FormData) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async (ctx) => {
+    const { user, t, db, association } = ctx;
     ensure(can.manageFinance(user), t);
     const f = reader(fd);
     const userId = f.str("userId");
@@ -91,31 +102,38 @@ export async function recordMembership(_prev: ActionState, fd: FormData) {
     const errors: Record<string, string> = {};
     if (!userId) errors.userId = t.validation.required;
     if (amountCents === null || amountCents < 0) errors.amount = t.validation.invalidAmount;
-    if (Object.keys(errors).length) return fail(t.validation.required, errors);
+    if (Object.keys(errors).length) return fail(Object.values(errors)[0], errors);
+    await assertRefs(ctx, { userIds: [userId] });
     const member = await db.user.findUnique({ where: { id: userId }, select: { name: true } });
     if (!member) return fail(t.common.notFound);
-    if (await db.membership.findUnique({ where: { userId_year: { userId, year } } })) {
+    if (await db.dues.findFirst({ where: { userId, year } }))
       return fail(t.finance.alreadyPaid, { userId: t.finance.alreadyPaid });
-    }
-    await db.$transaction(async (tx) => {
-      const transaction = amountCents
-        ? await tx.transaction.create({
-            data: {
-              label: `${t.enums.category.MEMBERSHIP} ${year} — ${member.name}`,
-              type: "INCOME",
-              category: "MEMBERSHIP",
-              amountCents: amountCents!,
-              date: paidAt,
-              paymentMethod: method,
-              recordedById: user.id,
-            },
-          })
-        : null;
-      await tx.membership.create({
-        data: { userId, year, amountCents: amountCents!, paidAt, method, transactionId: transaction?.id },
-      });
+    const transaction = amountCents
+      ? await db.transaction.create({
+          data: {
+            associationId: association.id,
+            label: `${t.enums.category.MEMBERSHIP} ${year} — ${member.name}`,
+            type: "INCOME",
+            category: "MEMBERSHIP",
+            amountCents: amountCents!,
+            date: paidAt,
+            paymentMethod: method,
+            recordedById: user.id,
+          },
+        })
+      : null;
+    await db.dues.create({
+      data: {
+        associationId: association.id,
+        userId,
+        year,
+        amountCents: amountCents!,
+        paidAt,
+        method,
+        transactionId: transaction?.id,
+      },
     });
-    await logActivity({
+    await logActivity(ctx, {
       actorId: user.id,
       action: "paid",
       entityType: "membership",
@@ -127,14 +145,12 @@ export async function recordMembership(_prev: ActionState, fd: FormData) {
 }
 
 export async function deleteMembership(id: string) {
-  return withUser(async ({ user, t }) => {
+  return withUser(async ({ user, t, db }) => {
     ensure(can.manageFinance(user), t);
-    const membership = await db.membership.findUnique({ where: { id } });
-    if (!membership) return fail(t.common.notFound);
-    await db.$transaction(async (tx) => {
-      await tx.membership.delete({ where: { id } });
-      if (membership.transactionId) await tx.transaction.delete({ where: { id: membership.transactionId } });
-    });
+    const dues = await db.dues.findUnique({ where: { id } });
+    if (!dues) return fail(t.common.notFound);
+    await db.dues.delete({ where: { id } });
+    if (dues.transactionId) await db.transaction.delete({ where: { id: dues.transactionId } });
     return ok(t.common.deleted);
   });
 }

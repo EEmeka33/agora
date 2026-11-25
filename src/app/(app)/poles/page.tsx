@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CheckSquare, FolderKanban, Layers, Plus, Users } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
 import { getMemberOptions } from "@/lib/queries";
@@ -19,7 +18,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "Poles" };
 
 export default async function PolesPage(props: PageProps<"/poles">) {
-  const user = await requireUser();
+  const { user, db } = await requireContext();
   const { t } = await getI18n();
   const sp = await props.searchParams;
   const [poles, members] = await Promise.all([
@@ -34,7 +33,7 @@ export default async function PolesPage(props: PageProps<"/poles">) {
         tasks: { where: { status: { not: "DONE" } }, select: { id: true } },
       },
     }),
-    getMemberOptions(),
+    getMemberOptions(db),
   ]);
 
   const newPole = (autoOpen: boolean) =>

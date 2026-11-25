@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft, Clock, FolderKanban, Layers, MapPin, Pencil, ScrollText, Trash2 } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
 import { getPoleOptions, getProjectOptions } from "@/lib/queries";
@@ -26,7 +25,7 @@ import { DateTile } from "@/components/events/date-tile";
 export const metadata: Metadata = { title: "Event" };
 
 export default async function EventPage(props: PageProps<"/events/[id]">) {
-  const user = await requireUser();
+  const { user, db } = await requireContext();
   const { t, locale } = await getI18n();
   const { id } = await props.params;
   const event = await db.event.findUnique({
@@ -44,7 +43,7 @@ export default async function EventPage(props: PageProps<"/events/[id]">) {
   if (!event) notFound();
   const canManage = can.manageEvents(user);
   const canMinutes = canManage || ["SECRETARY", "DEPUTY_SECRETARY", "PRESIDENT"].includes(user.boardPosition ?? "");
-  const [poles, projects] = await Promise.all([getPoleOptions(), getProjectOptions()]);
+  const [poles, projects] = await Promise.all([getPoleOptions(db), getProjectOptions(db)]);
   const mine = event.attendees.find((a) => a.userId === user.id)?.status ?? null;
   const isPast = (event.endAt ?? event.startAt) < nowWall();
   const isMeeting = ["GENERAL_ASSEMBLY", "BOARD_MEETING", "POLE_MEETING"].includes(event.type);

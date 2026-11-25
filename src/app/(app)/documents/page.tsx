@@ -14,8 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
 import { getAllProjectOptions, getPoleOptions } from "@/lib/queries";
@@ -50,7 +49,7 @@ function iconFor(doc: { mimeType: string | null; url: string | null }) {
 }
 
 export default async function DocumentsPage(props: PageProps<"/documents">) {
-  const user = await requireUser();
+  const { user, db } = await requireContext();
   const { t, locale } = await getI18n();
   const sp = await props.searchParams;
   const category =
@@ -72,8 +71,8 @@ export default async function DocumentsPage(props: PageProps<"/documents">) {
       },
     }),
     db.document.groupBy({ by: ["category"], _count: true }),
-    getPoleOptions(),
-    getAllProjectOptions(),
+    getPoleOptions(db),
+    getAllProjectOptions(db),
   ]);
   const projectOpts = projects.map((p) => ({ id: p.id, name: p.title }));
   const total = counts.reduce((s, c) => s + c._count, 0);

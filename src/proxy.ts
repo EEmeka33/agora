@@ -1,19 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE, verifySession } from "@/lib/session";
+import { looksLikeSessionToken, SESSION_COOKIE } from "@/lib/session-cookie";
 
-const PUBLIC_PATHS = ["/login", "/setup", "/invite"];
+const PUBLIC_PATHS = ["/login", "/signup", "/forgot", "/invite", "/join"];
 
 /**
- * Optimistic auth check: unauthenticated visitors are sent to /login.
- * Every page, server action and route handler still verifies the session itself.
+ * Optimistic check: visitors without a session cookie are sent to /login.
+ * The session itself is verified against the database by every page,
+ * server action and route handler (see src/lib/auth.ts).
  */
-export async function proxy(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-    return NextResponse.next();
-  }
-  const session = await verifySession(request.cookies.get(SESSION_COOKIE)?.value);
-  if (!session) {
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return NextResponse.next();
+  if (!looksLikeSessionToken(request.cookies.get(SESSION_COOKIE)?.value)) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.search = pathname === "/" ? "" : `?next=${encodeURIComponent(pathname + search)}`;

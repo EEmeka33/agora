@@ -49,3 +49,6 @@ next-env.d.ts
 # Playwright
 /test-results
 /playwright-report
+
+# Backups made with npm run db:backup
+/backups

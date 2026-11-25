@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { CheckSquare, Columns3, List, Plus } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { withParams } from "@/lib/url";
 import { getI18n } from "@/lib/i18n/server";
 import { getMemberOptions, getPoleOptions, getProjectOptions } from "@/lib/queries";
@@ -19,7 +19,7 @@ import { TaskTable } from "@/components/tasks/task-table";
 export const metadata: Metadata = { title: "Tasks" };
 
 export default async function TasksPage(props: PageProps<"/tasks">) {
-  const user = await requireUser();
+  const { user, db } = await requireContext();
   const { t } = await getI18n();
   const sp = await props.searchParams;
   const get = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
@@ -36,10 +36,10 @@ export default async function TasksPage(props: PageProps<"/tasks">) {
   if (get("q")) where.title = { contains: get("q") };
 
   const [tasks, members, projects, poles] = await Promise.all([
-    loadTaskCards(where, user),
-    getMemberOptions(),
-    getProjectOptions(),
-    getPoleOptions(),
+    loadTaskCards(db, where, user),
+    getMemberOptions(db),
+    getProjectOptions(db),
+    getPoleOptions(db),
   ]);
 
   const qs = (patch: Record<string, string | null>) => withParams("/tasks", sp, patch);

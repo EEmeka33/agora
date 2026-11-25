@@ -1,55 +1,45 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { ActionForm, SubmitButton, useFormCtx } from "@/components/forms/action-form";
 import { CheckboxField, SelectField, TextAreaField, TextField } from "@/components/forms/fields";
 import { Button } from "@/components/ui/button";
-import { setupWorkspace } from "@/actions/setup";
+import { createAssociation } from "@/actions/associations";
 import { dictionaries } from "@/lib/i18n/dictionaries";
 import { BOARD_POSITIONS, CURRENCIES, type Locale } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 const POLE_KEYS = ["communication", "events", "partnerships", "treasury", "members", "projects"] as const;
 
-export function SetupWizard({ defaultLocale }: { defaultLocale: Locale }) {
+/** Two-step wizard: the association, then the starter kit (checklist, poles). */
+export function AssociationWizard({ defaultLocale }: { defaultLocale: Locale }) {
   const [locale, setLocale] = React.useState<Locale>(defaultLocale);
   const [step, setStep] = React.useState(0);
   const t = dictionaries[locale];
-  const steps = [t.setup.stepAssociation, t.setup.stepAccount, t.setup.stepStarter];
-  const section0 = React.useRef<HTMLDivElement>(null);
-  const section1 = React.useRef<HTMLDivElement>(null);
-  const section2 = React.useRef<HTMLDivElement>(null);
+  const steps = [t.setup.stepAssociation, t.setup.stepStarter];
+  const first = React.useRef<HTMLDivElement>(null);
 
   const goNext = () => {
-    const current = [section0, section1, section2][step];
-    const fields = current.current?.querySelectorAll<HTMLInputElement>("input, select, textarea");
-    for (const field of fields ?? []) {
+    for (const field of first.current?.querySelectorAll<HTMLInputElement>("input, select, textarea") ?? []) {
       if (!field.checkValidity()) {
         field.reportValidity();
         return;
       }
     }
-    if (step === 1) {
-      const form = section1.current?.closest("form");
-      const pw = form?.querySelector<HTMLInputElement>('input[name="password"]');
-      const confirm = form?.querySelector<HTMLInputElement>('input[name="confirm"]');
-      if (pw && confirm && pw.value !== confirm.value) {
-        confirm.setCustomValidity(t.setup.passwordMismatch);
-        confirm.reportValidity();
-        confirm.addEventListener("input", () => confirm.setCustomValidity(""), { once: true });
-        return;
-      }
-    }
-    setStep((s) => Math.min(2, s + 1));
+    setStep(1);
   };
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between gap-3">
-        <span className="flex size-10 items-center justify-center rounded-xl bg-primary text-lg font-bold text-primary-foreground shadow-sm">
-          A
-        </span>
+        <Link
+          href="/welcome"
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" /> {t.welcome.back}
+        </Link>
         <div className="inline-flex rounded-lg border bg-muted/60 p-0.5 text-[13px]">
           {(["en", "fr"] as const).map((l) => (
             <button
@@ -84,9 +74,7 @@ export function SetupWizard({ defaultLocale }: { defaultLocale: Locale }) {
             >
               {i < step ? <Check className="size-3.5" strokeWidth={3} /> : i + 1}
             </span>
-            <span
-              className={cn("hidden truncate text-sm font-medium sm:block", i === step ? "" : "text-muted-foreground")}
-            >
+            <span className={cn("truncate text-sm font-medium", i === step ? "" : "text-muted-foreground")}>
               {label}
             </span>
             {i < steps.length - 1 && <span className="h-px flex-1 bg-border" />}
@@ -94,10 +82,10 @@ export function SetupWizard({ defaultLocale }: { defaultLocale: Locale }) {
         ))}
       </ol>
 
-      <ActionForm action={setupWorkspace} successToast={false}>
+      <ActionForm action={createAssociation} successToast={false}>
         <input type="hidden" name="locale" value={locale} />
         <Errors />
-        <div ref={section0} className={cn("space-y-4", step !== 0 && "hidden")}>
+        <div ref={first} className={cn("space-y-4", step !== 0 && "hidden")}>
           <TextField
             name="name"
             label={t.setup.associationName}
@@ -126,33 +114,6 @@ export function SetupWizard({ defaultLocale }: { defaultLocale: Locale }) {
               defaultValue="EUR"
             />
           </div>
-        </div>
-
-        <div ref={section1} className={cn("space-y-4", step !== 1 && "hidden")}>
-          <p className="rounded-lg bg-primary-soft px-3 py-2 text-sm text-primary-soft-foreground">
-            {t.setup.accountHint}
-          </p>
-          <TextField name="adminName" label={t.setup.yourName} autoComplete="name" required />
-          <TextField name="email" type="email" label={t.setup.yourEmail} autoComplete="email" required />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
-              name="password"
-              type="password"
-              label={t.setup.password}
-              autoComplete="new-password"
-              minLength={8}
-              required
-              hint={t.validation.passwordLength}
-            />
-            <TextField
-              name="confirm"
-              type="password"
-              label={t.setup.confirmPassword}
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
-          </div>
           <SelectField
             name="boardPosition"
             label={t.setup.yourPosition}
@@ -162,7 +123,7 @@ export function SetupWizard({ defaultLocale }: { defaultLocale: Locale }) {
           />
         </div>
 
-        <div ref={section2} className={cn("space-y-4", step !== 2 && "hidden")}>
+        <div className={cn("space-y-4", step !== 1 && "hidden")}>
           <CheckboxField
             name="checklist"
             defaultChecked
@@ -187,13 +148,13 @@ export function SetupWizard({ defaultLocale }: { defaultLocale: Locale }) {
 
         <div className="mt-7 flex items-center justify-between gap-3">
           {step > 0 ? (
-            <Button variant="ghost" onClick={() => setStep((s) => s - 1)}>
+            <Button variant="ghost" onClick={() => setStep(0)}>
               <ArrowLeft /> {t.setup.back}
             </Button>
           ) : (
             <span />
           )}
-          {step < 2 ? (
+          {step === 0 ? (
             <Button onClick={goNext}>
               {t.setup.continue} <ArrowRight />
             </Button>
@@ -210,14 +171,10 @@ export function SetupWizard({ defaultLocale }: { defaultLocale: Locale }) {
 
 function Errors() {
   const { state } = useFormCtx();
-  if (!state || state.ok) return null;
-  const messages = state.fieldErrors ? Object.values(state.fieldErrors) : state.error ? [state.error] : [];
-  if (!messages.length) return null;
+  if (!state || state.ok || !state.error) return null;
   return (
-    <ul className="mb-4 space-y-1 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-      {messages.map((m) => (
-        <li key={m}>{m}</li>
-      ))}
-    </ul>
+    <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+      {state.error}
+    </p>
   );
 }

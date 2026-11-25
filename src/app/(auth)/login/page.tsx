@@ -1,10 +1,11 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
-import { connection } from "next/server";
 import { db } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getAccount } from "@/lib/auth";
 import { getI18n } from "@/lib/i18n/server";
+import { signupMode } from "@/lib/constants";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Sign in" };
@@ -18,26 +19,35 @@ export default function LoginPage(props: PageProps<"/login">) {
 }
 
 async function Login({ searchParams }: { searchParams: PageProps<"/login">["searchParams"] }) {
-  await connection();
+  if (await getAccount()) redirect("/");
   const { t } = await getI18n();
-  if ((await db.user.count()) === 0) redirect("/setup");
-  if (await getCurrentUser()) redirect("/");
-  const association = await db.association.findFirst({ select: { name: true } });
+  if ((await db.user.count()) === 0) redirect("/signup");
   const { next } = await searchParams;
 
   return (
     <div>
       <div className="mb-8">
-        {association && (
-          <p className="mb-3 inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-success" /> {association.name}
-          </p>
-        )}
         <h1 className="text-3xl font-semibold tracking-tight">{t.auth.welcomeBack}</h1>
         <p className="mt-2 text-muted-foreground">{t.auth.signInSubtitle}</p>
       </div>
       <LoginForm next={typeof next === "string" ? next : ""} />
-      <p className="mt-8 text-sm text-muted-foreground">{t.auth.noAccount}</p>
+      <div className="mt-8 space-y-2 text-sm text-muted-foreground">
+        <p>
+          <Link href="/forgot" className="font-medium text-primary hover:underline">
+            {t.account.forgotPassword}
+          </Link>
+        </p>
+        {signupMode() !== "closed" ? (
+          <p>
+            {t.account.noAccountYet}{" "}
+            <Link href="/signup" className="font-medium text-primary hover:underline">
+              {t.account.createAccount}
+            </Link>
+          </p>
+        ) : (
+          <p>{t.auth.noAccount}</p>
+        )}
+      </div>
     </div>
   );
 }

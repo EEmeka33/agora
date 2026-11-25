@@ -1,9 +1,9 @@
 import "server-only";
-import { db } from "./db";
+import type { TenantDb } from "./tenant";
 import type { Prisma } from "@/generated/prisma/client";
 import { projectHealth, projectProgress } from "./progress";
 
-export async function loadProjects(where: Prisma.ProjectWhereInput = {}) {
+export async function loadProjects(db: TenantDb, where: Prisma.ProjectWhereInput = {}) {
   const projects = await db.project.findMany({
     where,
     include: {

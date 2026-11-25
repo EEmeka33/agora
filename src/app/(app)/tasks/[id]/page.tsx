@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, Pencil, Trash2 } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { ChevronLeft, Clock, Inbox, Pencil, Trash2 } from "lucide-react";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
 import { getMemberOptions, getPoleOptions, getProjectOptions } from "@/lib/queries";
@@ -23,11 +22,13 @@ import { TaskFields } from "@/components/tasks/task-fields";
 import { TaskStatusPicker } from "@/components/tasks/status-picker";
 import { DueChip } from "@/components/tasks/task-card";
 import { RichText } from "@/components/ui/rich-text";
+import { TimeFields } from "@/components/volunteering/time-fields";
+import { logTime } from "@/actions/volunteering";
 
 export const metadata: Metadata = { title: "Task" };
 
 export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
-  const user = await requireUser();
+  const { user, db } = await requireContext();
   const { t, locale } = await getI18n();
   const { id } = await props.params;
   const task = await db.task.findUnique({
@@ -37,6 +38,7 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
       pole: { select: { id: true, name: true, color: true } },
       assignee: { select: { id: true, name: true, avatarColor: true } },
       creator: { select: { id: true, name: true } },
+      request: { select: { id: true } },
       comments: {
         orderBy: { createdAt: "asc" },
         include: { author: { select: { id: true, name: true, avatarColor: true } } },
@@ -48,7 +50,11 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
   const projectLeadId = task.project?.leadId ?? null;
   const canEdit = can.editTask(user, { ...task, projectLeadId });
   const canDelete = can.deleteTask(user, { creatorId: task.creatorId, projectLeadId });
-  const [members, projects, poles] = await Promise.all([getMemberOptions(), getProjectOptions(), getPoleOptions()]);
+  const [members, projects, poles] = await Promise.all([
+    getMemberOptions(db),
+    getProjectOptions(db),
+    getPoleOptions(db),
+  ]);
   const projectOpts = projects.map((p) => ({ id: p.id, name: p.title }));
   if (task.project && !projectOpts.some((p) => p.id === task.project!.id))
     projectOpts.push({ id: task.project.id, name: task.project.title });
@@ -69,6 +75,14 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
               {t.enums.taskStatus[task.status]}
             </Badge>
             <Badge color={colorFor("priority", task.priority)}>{t.enums.priority[task.priority]}</Badge>
+            {task.request && (
+              <Link
+                href={`/requests/${task.request.id}`}
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              >
+                <Inbox className="size-3.5" /> {t.tasks.fromRequest}
+              </Link>
+            )}
           </div>
           <h1
             className={cn(
@@ -80,6 +94,23 @@ export default async function TaskPage(props: PageProps<"/tasks/[id]">) {
           </h1>
         </div>
         <div className="flex shrink-0 gap-2">
+          <FormDialog
+            title={t.tasks.logTime}
+            description={task.title}
+            action={logTime}
+            submitLabel={t.common.save}
+            trigger={
+              <Button variant="outline">
+                <Clock /> {t.tasks.logTime}
+              </Button>
+            }
+          >
+            <TimeFields
+              poles={poles}
+              projects={projectOpts}
+              defaults={{ taskId: task.id, poleId: task.poleId, projectId: task.projectId }}
+            />
+          </FormDialog>
           {canEdit && (
             <FormDialog
               title={t.tasks.editTask}

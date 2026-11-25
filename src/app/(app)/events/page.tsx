@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CalendarDays, CalendarRange, Clock, List, MapPin, Plus, Users } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
 import { getPoleOptions, getProjectOptions } from "@/lib/queries";
@@ -21,7 +20,7 @@ import { MonthCalendar } from "@/components/events/calendar";
 export const metadata: Metadata = { title: "Events" };
 
 export default async function EventsPage(props: PageProps<"/events">) {
-  const user = await requireUser();
+  const { user, db } = await requireContext();
   const { t, locale } = await getI18n();
   const sp = await props.searchParams;
   const view = sp.view === "calendar" ? "calendar" : "list";
@@ -29,7 +28,7 @@ export default async function EventsPage(props: PageProps<"/events">) {
   const monthParam = typeof sp.month === "string" && /^\d{4}-\d{2}$/.test(sp.month) ? sp.month : null;
   const year = monthParam ? Number(monthParam.slice(0, 4)) : now.getUTCFullYear();
   const month = monthParam ? Number(monthParam.slice(5, 7)) - 1 : now.getUTCMonth();
-  const [poles, projects] = await Promise.all([getPoleOptions(), getProjectOptions()]);
+  const [poles, projects] = await Promise.all([getPoleOptions(db), getProjectOptions(db)]);
 
   const newEvent = (autoOpen: boolean) =>
     can.manageEvents(user) && (
@@ -45,7 +44,7 @@ export default async function EventsPage(props: PageProps<"/events">) {
           </Button>
         }
       >
-        <EventFields poles={poles} projects={projects.map((p) => ({ id: p.id, name: p.title }))} />
+        <EventFields isNew poles={poles} projects={projects.map((p) => ({ id: p.id, name: p.title }))} />
       </FormDialog>
     );
 

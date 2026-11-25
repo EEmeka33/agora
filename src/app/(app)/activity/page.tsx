@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { formatDate } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,7 +16,7 @@ const PAGE_SIZE = 50;
 const TYPES = ["task", "project", "pole", "member", "event", "document", "transaction", "step", "announcement"];
 
 export default async function ActivityPage(props: PageProps<"/activity">) {
-  await requireUser();
+  const { db } = await requireContext();
   const { t, locale } = await getI18n();
   const sp = await props.searchParams;
   const page = Math.max(1, Number(sp.page) || 1);

@@ -1,19 +1,20 @@
 import "server-only";
-import { db } from "./db";
 import type { Prisma } from "@/generated/prisma/client";
-import type { CurrentUser } from "./auth";
+import type { CurrentUser } from "./context";
+import type { TenantDb } from "./tenant";
 import { can } from "./permissions";
 
 export const PRIORITY_RANK: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
 /** Tasks shaped for the board / lists, with a per-task edit permission. */
-export async function loadTaskCards(where: Prisma.TaskWhereInput, user: CurrentUser) {
+export async function loadTaskCards(db: TenantDb, where: Prisma.TaskWhereInput, user: CurrentUser) {
   const tasks = await db.task.findMany({
     where,
     include: {
       project: { select: { id: true, title: true, color: true, leadId: true } },
       assignee: { select: { id: true, name: true, avatarColor: true } },
       _count: { select: { comments: true } },
+      request: { select: { id: true } },
     },
     orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
     take: 500,
@@ -26,6 +27,7 @@ export async function loadTaskCards(where: Prisma.TaskWhereInput, user: CurrentU
       priority: task.priority,
       dueDate: task.dueDate,
       commentCount: task._count.comments,
+      fromRequest: !!task.request,
       canEdit: can.editTask(user, { ...task, projectLeadId: task.project?.leadId ?? null }),
       project: task.project ? { id: task.project.id, title: task.project.title, color: task.project.color } : null,
       assignee: task.assignee,

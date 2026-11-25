@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   CalendarPlus,
   CheckSquare,
+  Inbox,
+  Vote,
   FolderPlus,
   Languages,
   LogOut,
@@ -24,15 +26,20 @@ import { useMobileNav } from "./sidebar";
 import { useLocale, useT } from "@/lib/i18n/client";
 import { logout, setLocale } from "@/actions/auth";
 import { openCommandPalette } from "./command-palette";
+import { NotificationBell } from "./notification-bell";
 
 export function Topbar({
   user,
   canManage,
   isAdmin,
+  unread,
+  associationName,
 }: {
   user: { id: string; name: string; email: string; avatarColor: string; role: string };
   canManage: boolean;
   isAdmin: boolean;
+  unread: number;
+  associationName: string;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -84,6 +91,24 @@ export function Topbar({
               >
                 {t.nav.newTask}
               </MenuItem>
+              <MenuItem
+                icon={<Inbox />}
+                onClick={() => {
+                  close();
+                  router.push("/requests?new=1");
+                }}
+              >
+                {t.requests.new}
+              </MenuItem>
+              <MenuItem
+                icon={<Vote />}
+                onClick={() => {
+                  close();
+                  router.push("/polls?new=1");
+                }}
+              >
+                {t.polls.new}
+              </MenuItem>
               {canManage && (
                 <>
                   <MenuItem
@@ -121,6 +146,7 @@ export function Topbar({
           )}
         </Menu>
 
+        <NotificationBell initialUnread={unread} currentAssociation={associationName} />
         <ThemeToggle />
 
         <Menu

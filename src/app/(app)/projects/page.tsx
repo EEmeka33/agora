@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { FolderKanban, GanttChart, LayoutGrid, Plus } from "lucide-react";
 import type { Prisma } from "@/generated/prisma/client";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { withParams } from "@/lib/url";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
-import { getAssociation, getMemberOptions, getPoleOptions } from "@/lib/queries";
+import { getMemberOptions, getPoleOptions } from "@/lib/queries";
 import { loadProjects } from "@/lib/project-queries";
 import { createProject } from "@/actions/projects";
 import { EmptyState, PageHeader, Segmented } from "@/components/ui/page";
@@ -15,12 +15,11 @@ import { FilterSelect, SearchInput } from "@/components/forms/filters";
 import { ProjectFields } from "@/components/projects/project-fields";
 import { ProjectCard } from "@/components/projects/project-card";
 import { ProjectTimeline } from "@/components/projects/timeline";
-import { db } from "@/lib/db";
 
 export const metadata: Metadata = { title: "Projects" };
 
 export default async function ProjectsPage(props: PageProps<"/projects">) {
-  const user = await requireUser();
+  const { user, db, association } = await requireContext();
   const { t } = await getI18n();
   const sp = await props.searchParams;
   const get = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : "");
@@ -33,11 +32,10 @@ export default async function ProjectsPage(props: PageProps<"/projects">) {
   if (get("pole")) where.poleId = get("pole");
   if (get("q")) where.title = { contains: get("q") };
 
-  const [projects, members, poles, association, leadOf] = await Promise.all([
-    loadProjects(where),
-    getMemberOptions(),
-    getPoleOptions(),
-    getAssociation(),
+  const [projects, members, poles, leadOf] = await Promise.all([
+    loadProjects(db, where),
+    getMemberOptions(db),
+    getPoleOptions(db),
     db.poleMember.count({ where: { userId: user.id, role: "LEAD" } }),
   ]);
   const canCreate = can.createProject(user) || leadOf > 0;

@@ -3,80 +3,88 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
-import bcrypt from "bcryptjs";
 import { db } from "./db";
-import { SESSION_COOKIE, sessionCookieOptions, signSession, verifySession } from "./session";
-import type { Role } from "./constants";
+import { newToken, sha256 } from "./tokens";
+import { clientIp, userAgent } from "./request-info";
+import { SESSION_COOKIE, SESSION_DAYS, sessionCookieOptions } from "./session-cookie";
 
-export type CurrentUser = {
+export { hashPassword, verifyPassword } from "./password";
+
+/** The signed-in account (not tied to an association). */
+export type Account = {
   id: string;
   name: string;
   email: string;
-  role: Role;
-  boardPosition: string | null;
-  title: string | null;
   avatarColor: string;
   locale: string | null;
+  sessionId: string;
 };
 
-/** The signed-in user, or null. Memoized for the duration of a request. */
-export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
-  // Everything behind a session is rendered at request time (uses the clock, the database…).
+const DAY = 24 * 3600 * 1000;
+
+/** Reads the session cookie and returns the account, or null. Memoized per request. */
+export const getAccount = cache(async (): Promise<Account | null> => {
+  // Everything behind a session is rendered at request time.
   await connection();
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  const session = await verifySession(token);
-  if (!session) return null;
-  const user = await db.user.findUnique({
-    where: { id: session.userId },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      boardPosition: true,
-      title: true,
-      avatarColor: true,
-      locale: true,
-      status: true,
-      passwordHash: true,
+  if (!token) return null;
+  const session = await db.session.findUnique({
+    where: { tokenHash: sha256(token) },
+    include: {
+      user: { select: { id: true, name: true, email: true, avatarColor: true, locale: true, passwordHash: true } },
     },
   });
-  if (!user || user.status !== "ACTIVE" || !user.passwordHash) return null;
+  if (!session || session.expiresAt < new Date() || !session.user.passwordHash) return null;
+  // Sliding expiration, written at most once per hour.
+  if (Date.now() - session.lastSeenAt.getTime() > 3600_000) {
+    await db.session
+      .update({
+        where: { id: session.id },
+        data: { lastSeenAt: new Date(), expiresAt: new Date(Date.now() + SESSION_DAYS * DAY) },
+      })
+      .catch(() => {});
+  }
+  const { user } = session;
   return {
     id: user.id,
     name: user.name,
     email: user.email,
-    role: user.role as Role,
-    boardPosition: user.boardPosition,
-    title: user.title,
     avatarColor: user.avatarColor,
     locale: user.locale,
+    sessionId: session.id,
   };
 });
 
-/** Use in pages: redirects to /login when not signed in (or to /setup on a fresh install). */
-export async function requireUser(): Promise<CurrentUser> {
-  const user = await getCurrentUser();
-  if (!user) {
-    const count = await db.user.count();
-    redirect(count === 0 ? "/setup" : "/login");
-  }
-  return user;
+/** Use in pages that only need an account (e.g. /welcome). */
+export async function requireAccount() {
+  const account = await getAccount();
+  if (!account) redirect("/login");
+  return account;
 }
 
+/** Creates a session in the database and sets the cookie (server actions / route handlers only). */
 export async function createSession(userId: string) {
-  const token = await signSession({ userId });
+  const token = newToken();
+  await db.session.create({
+    data: {
+      tokenHash: sha256(token),
+      userId,
+      userAgent: await userAgent(),
+      ip: await clientIp(),
+      expiresAt: new Date(Date.now() + SESSION_DAYS * DAY),
+    },
+  });
   (await cookies()).set(SESSION_COOKIE, token, sessionCookieOptions());
 }
 
 export async function destroySession() {
-  (await cookies()).delete(SESSION_COOKIE);
+  const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (token) await db.session.deleteMany({ where: { tokenHash: sha256(token) } });
+  store.delete(SESSION_COOKIE);
 }
 
-export function hashPassword(password: string) {
-  return bcrypt.hash(password, 10);
-}
-
-export function verifyPassword(password: string, hash: string) {
-  return bcrypt.compare(password, hash);
+/** Signs the account out everywhere except (optionally) the current browser. */
+export async function revokeSessions(userId: string, keepSessionId?: string) {
+  await db.session.deleteMany({ where: { userId, ...(keepSessionId ? { id: { not: keepSessionId } } : {}) } });
 }

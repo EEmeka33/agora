@@ -5,6 +5,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  ChevronsUpDown,
+  Clock,
+  Inbox,
+  Plus,
+  Vote,
   CalendarDays,
   CheckSquare,
   FileText,
@@ -17,10 +22,13 @@ import {
   Users,
   Wallet,
   X,
+  Check,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n/client";
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu";
+import { switchAssociation } from "@/actions/auth";
 
 const icons = {
   dashboard: LayoutDashboard,
@@ -35,6 +43,9 @@ const icons = {
   finance: Wallet,
   activity: Activity,
   settings: Settings,
+  requests: Inbox,
+  polls: Vote,
+  volunteering: Clock,
 } satisfies Record<string, LucideIcon>;
 
 type NavKey = keyof typeof icons;
@@ -62,12 +73,15 @@ const sections: {
     items: [
       { key: "projects", href: "/projects" },
       { key: "tasks", href: "/tasks" },
+      { key: "requests", href: "/requests" },
     ],
   },
   {
     key: "life",
     items: [
       { key: "events", href: "/events" },
+      { key: "polls", href: "/polls" },
+      { key: "volunteering", href: "/volunteering" },
       { key: "documents", href: "/documents" },
     ],
   },
@@ -82,7 +96,8 @@ const sections: {
 ];
 
 export type SidebarProps = {
-  association: { name: string; legalForm: string };
+  association: { id: string; name: string; legalForm: string };
+  associations: { id: string; name: string; role: string }[];
   badges: Partial<Record<NavKey, string | number>>;
   footer: React.ReactNode;
 };
@@ -101,7 +116,73 @@ export function useMobileNav() {
   return React.useContext(MobileNavContext);
 }
 
-function SidebarContent({ association, badges, footer, onNavigate }: SidebarProps & { onNavigate?: () => void }) {
+function AssociationSwitcher({ association, associations }: Pick<SidebarProps, "association" | "associations">) {
+  const t = useT();
+  const [pending, startTransition] = React.useTransition();
+  return (
+    <Menu
+      align="start"
+      className="w-60"
+      triggerClassName="flex w-full"
+      trigger={
+        <button
+          type="button"
+          disabled={pending}
+          className="flex w-full items-center gap-3 rounded-xl p-1.5 text-left transition-colors hover:bg-hover"
+          aria-label={t.nav.switchAssociation}
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-[15px] font-bold text-primary-foreground shadow-sm">
+            {association.name.trim().charAt(0).toUpperCase() || "A"}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm leading-tight font-semibold">{association.name}</span>
+            <span className="block truncate text-xs text-muted-foreground">{association.legalForm}</span>
+          </span>
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+        </button>
+      }
+    >
+      {(close) => (
+        <>
+          <MenuLabel>{t.nav.switchAssociation}</MenuLabel>
+          {associations.map((a) => (
+            <MenuItem
+              key={a.id}
+              onClick={() => {
+                close();
+                if (a.id !== association.id) startTransition(() => switchAssociation(a.id));
+              }}
+              icon={
+                <span className="flex size-5 items-center justify-center rounded-md bg-muted text-[10px] font-bold text-foreground">
+                  {a.name.charAt(0).toUpperCase()}
+                </span>
+              }
+            >
+              <span className="flex-1 truncate">{a.name}</span>
+              {a.id === association.id && <Check className="!text-primary" />}
+            </MenuItem>
+          ))}
+          <MenuSeparator />
+          <Link
+            href="/welcome"
+            onClick={close}
+            className="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-hover [&_svg]:size-4 [&_svg]:text-muted-foreground"
+          >
+            <Plus /> {t.nav.newAssociation}
+          </Link>
+        </>
+      )}
+    </Menu>
+  );
+}
+
+function SidebarContent({
+  association,
+  associations,
+  badges,
+  footer,
+  onNavigate,
+}: SidebarProps & { onNavigate?: () => void }) {
   const t = useT();
   const pathname = usePathname();
   const isActive = (href: string) =>
@@ -109,15 +190,9 @@ function SidebarContent({ association, badges, footer, onNavigate }: SidebarProp
 
   return (
     <div className="flex h-full flex-col">
-      <Link href="/" onClick={onNavigate} className="flex items-center gap-3 px-4 pt-5 pb-4">
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-[15px] font-bold text-primary-foreground shadow-sm">
-          {association.name.trim().charAt(0).toUpperCase() || "A"}
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-sm leading-tight font-semibold">{association.name}</span>
-          <span className="block truncate text-xs text-muted-foreground">{association.legalForm}</span>
-        </span>
-      </Link>
+      <div className="px-3 pt-4 pb-3">
+        <AssociationSwitcher association={association} associations={associations} />
+      </div>
       <nav className="flex-1 scrollbar-thin space-y-5 overflow-y-auto px-3 pb-4">
         {sections.map((section) => (
           <div key={section.key}>

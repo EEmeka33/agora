@@ -1,9 +1,13 @@
 // Agora — data model
 // Docs: https://pris.ly/d/prisma-schema
 //
+// One Agora instance can host several associations. Everything that belongs to an
+// association carries an `associationId`; queries are scoped automatically by the
+// tenant client in src/lib/tenant.ts.
+//
 // Enumerated values (statuses, roles, categories…) are stored as strings so the
-// schema stays portable between SQLite and PostgreSQL. The allowed values live in
-// src/lib/constants.ts and are validated with zod in the server actions.
+// schema stays portable between SQLite and PostgreSQL. Allowed values live in
+// src/lib/constants.ts and are validated in the server actions.
 
 generator client {
   provider = "prisma-client"
@@ -14,9 +18,96 @@ datasource db {
   provider = "sqlite"
 }
 
-// ─── Association ────────────────────────────────────────────────────────────
+// ─── Accounts & security ────────────────────────────────────────────────────
 
-/// One instance of Agora manages one association.
+/// A person's account. Profile fields are shared across associations.
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  name              String
+  /// Argon2id hash (null until the person activates an account created for them)
+  passwordHash      String?
+  passwordChangedAt DateTime?
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  phone             String?
+  bio               String?
+  skills            String?
+  avatarColor       String    @default("indigo")
+  locale            String?
+  /// Receive notifications by email too (when the instance has SMTP configured)
+  emailNotifications Boolean  @default(true)
+  /// SHA-256 of the private calendar feed token
+  calendarTokenHash String?   @unique
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  sessions         Session[]
+  memberships      Member[]
+  poleMemberships  PoleMember[]
+  projectsLed      Project[]          @relation("ProjectLead")
+  projectMembers   ProjectMember[]
+  tasksAssigned    Task[]             @relation("TaskAssignee")
+  tasksCreated     Task[]             @relation("TaskCreator")
+  comments         TaskComment[]
+  foundationSteps  FoundationStep[]
+  responsibilities Responsibility[]
+  eventsCreated    Event[]
+  attendances      EventAttendee[]
+  transactions     Transaction[]
+  dues             Dues[]
+  documents        Document[]
+  announcements    Announcement[]
+  activities       Activity[]
+  projectUpdates   ProjectUpdate[]
+  invitations      Invitation[]       @relation("InvitationTarget")
+  invitationsSent  Invitation[]       @relation("InvitationSender")
+  joinCodes        JoinCode[]
+  requestsMade     Request[]          @relation("RequestRequester")
+  requestsTaken    Request[]          @relation("RequestClaimer")
+  notifications    Notification[]     @relation("NotificationRecipient")
+  notificationsSent Notification[]    @relation("NotificationActor")
+  polls            Poll[]
+  pollVotes        PollVote[]
+  timeEntries      TimeEntry[]
+}
+
+/// A signed-in browser. The cookie holds a random token; only its SHA-256 is stored.
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+
+  @@index([userId])
+}
+
+/// One-time link to activate an account created by an admin, or to reset a password.
+/// Only the SHA-256 of the token is stored.
+model Invitation {
+  id            String       @id @default(cuid())
+  tokenHash     String       @unique
+  /// INVITE | RESET
+  kind          String       @default("INVITE")
+  userId        String
+  user          User         @relation("InvitationTarget", fields: [userId], references: [id], onDelete: Cascade)
+  associationId String?
+  association   Association? @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  invitedById   String?
+  invitedBy     User?        @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: SetNull)
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime     @default(now())
+}
+
+// ─── Associations & members ─────────────────────────────────────────────────
+
 model Association {
   id                   String    @id @default(cuid())
   name                 String
@@ -39,86 +130,90 @@ model Association {
   locale               String    @default("en")
   currency             String    @default("EUR")
   membershipFeeCents   Int?
+  /// Value of one hour of volunteering, used to estimate its worth
+  volunteerHourCents   Int?
   fiscalYearStartMonth Int       @default(1)
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
+
+  members          Member[]
+  invitations      Invitation[]
+  joinCodes        JoinCode[]
+  poles            Pole[]
+  responsibilities Responsibility[]
+  foundationSteps  FoundationStep[]
+  projects         Project[]
+  tasks            Task[]
+  events           Event[]
+  announcements    Announcement[]
+  transactions     Transaction[]
+  dues             Dues[]
+  documents        Document[]
+  activities       Activity[]
+  requests         Request[]
+  notifications    Notification[]
+  polls            Poll[]
+  timeEntries      TimeEntry[]
 }
 
-// ─── People ─────────────────────────────────────────────────────────────────
-
-/// A member of the association. Members may or may not have a login
-/// (passwordHash is null until they accept an invitation).
-model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String
-  passwordHash  String?
-  /// ADMIN | MANAGER | MEMBER — permissions inside Agora
-  role          String    @default("MEMBER")
+/// A person's membership in an association, with their role there.
+model Member {
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// ADMIN | MANAGER | MEMBER — permissions inside this association
+  role          String      @default("MEMBER")
   /// PRESIDENT | VICE_PRESIDENT | SECRETARY | … — seat on the board (bureau)
   boardPosition String?
-  /// Free-form job title, e.g. "Partnerships lead"
+  /// Free-form title, e.g. "Partnerships lead"
   title         String?
-  phone         String?
-  bio           String?
-  skills        String?
-  avatarColor   String    @default("indigo")
   /// ACTIVE | INACTIVE
-  status        String    @default("ACTIVE")
-  locale        String?
-  joinedAt      DateTime  @default(now())
-  lastLoginAt   DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  status        String      @default("ACTIVE")
+  joinedAt      DateTime    @default(now())
+  createdAt     DateTime    @default(now())
 
-  poleMemberships  PoleMember[]
-  projectsLed      Project[]          @relation("ProjectLead")
-  projectMembers   ProjectMember[]
-  tasksAssigned    Task[]             @relation("TaskAssignee")
-  tasksCreated     Task[]             @relation("TaskCreator")
-  comments         TaskComment[]
-  foundationSteps  FoundationStep[]
-  responsibilities Responsibility[]
-  eventsCreated    Event[]
-  attendances      EventAttendee[]
-  transactions     Transaction[]
-  memberships      Membership[]
-  documents        Document[]
-  announcements    Announcement[]
-  activities       Activity[]
-  projectUpdates   ProjectUpdate[]
-  invitations      Invitation[]       @relation("InvitationTarget")
-  invitationsSent  Invitation[]       @relation("InvitationSender")
+  @@unique([associationId, userId])
+  @@index([userId])
 }
 
-/// One-time link used to activate an account or reset a password.
-model Invitation {
-  id          String    @id @default(cuid())
-  token       String    @unique
-  /// INVITE | RESET
-  kind        String    @default("INVITE")
-  userId      String
-  user        User      @relation("InvitationTarget", fields: [userId], references: [id], onDelete: Cascade)
-  invitedById String?
-  invitedBy   User?     @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: SetNull)
-  expiresAt   DateTime
-  usedAt      DateTime?
-  createdAt   DateTime  @default(now())
+/// Code that lets people join an association, with a limited number of uses.
+model JoinCode {
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  code          String      @unique
+  label         String?
+  /// Role given to people who join with this code
+  role          String      @default("MEMBER")
+  /// Optional pole joined automatically
+  poleId        String?
+  pole          Pole?       @relation(fields: [poleId], references: [id], onDelete: SetNull)
+  maxUses       Int         @default(10)
+  uses          Int         @default(0)
+  expiresAt     DateTime?
+  revokedAt     DateTime?
+  createdById   String?
+  createdBy     User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
 }
 
 // ─── Structure ──────────────────────────────────────────────────────────────
 
 /// A pole (department / working group) of the association.
 model Pole {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  mission     String?
-  color       String   @default("indigo")
-  icon        String   @default("layers")
-  order       Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  mission       String?
+  color         String      @default("indigo")
+  icon          String      @default("layers")
+  order         Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   members          PoleMember[]
   projects         Project[]
@@ -127,6 +222,13 @@ model Pole {
   events           Event[]
   transactions     Transaction[]
   documents        Document[]
+  joinCodes        JoinCode[]
+  requestsReceived Request[]        @relation("RequestTargetPole")
+  requestsSent     Request[]        @relation("RequestSourcePole")
+  polls            Poll[]
+  timeEntries      TimeEntry[]
+
+  @@index([associationId])
 }
 
 model PoleMember {
@@ -143,65 +245,71 @@ model PoleMember {
 
 /// "Who does what": a recurring duty owned by someone.
 model Responsibility {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
   /// ONGOING | WEEKLY | MONTHLY | QUARTERLY | YEARLY | ONE_OFF
-  frequency   String   @default("ONGOING")
-  ownerId     String?
-  owner       User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
-  poleId      String?
-  pole        Pole?    @relation(fields: [poleId], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  frequency     String      @default("ONGOING")
+  ownerId       String?
+  owner         User?       @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  poleId        String?
+  pole          Pole?       @relation(fields: [poleId], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
 
 // ─── Founding ───────────────────────────────────────────────────────────────
 
 /// A step of the founding checklist (statutes, general assembly, declaration…).
 model FoundationStep {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
   /// PROJECT | LEGAL | GOVERNANCE | FINANCE | OPERATIONS | COMMUNICATION
-  category    String    @default("PROJECT")
+  category      String      @default("PROJECT")
   /// TODO | IN_PROGRESS | DONE | SKIPPED
-  status      String    @default("TODO")
-  order       Int       @default(0)
-  resourceUrl String?
-  notes       String?
-  dueDate     DateTime?
-  completedAt DateTime?
-  assigneeId  String?
-  assignee    User?     @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  status        String      @default("TODO")
+  order         Int         @default(0)
+  resourceUrl   String?
+  notes         String?
+  dueDate       DateTime?
+  completedAt   DateTime?
+  assigneeId    String?
+  assignee      User?       @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
 
 // ─── Work ───────────────────────────────────────────────────────────────────
 
 model Project {
-  id             String    @id @default(cuid())
+  id             String      @id @default(cuid())
+  associationId  String
+  association    Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
   title          String
   description    String?
   objectives     String?
   /// IDEA | PLANNED | IN_PROGRESS | ON_HOLD | COMPLETED | CANCELLED
-  status         String    @default("PLANNED")
+  status         String      @default("PLANNED")
   /// LOW | MEDIUM | HIGH | URGENT
-  priority       String    @default("MEDIUM")
+  priority       String      @default("MEDIUM")
   /// AUTO (computed from tasks & milestones) | MANUAL
-  progressMode   String    @default("AUTO")
-  manualProgress Int       @default(0)
+  progressMode   String      @default("AUTO")
+  manualProgress Int         @default(0)
   startDate      DateTime?
   dueDate        DateTime?
   budgetCents    Int?
-  color          String    @default("indigo")
+  color          String      @default("indigo")
   poleId         String?
-  pole           Pole?     @relation(fields: [poleId], references: [id], onDelete: SetNull)
+  pole           Pole?       @relation(fields: [poleId], references: [id], onDelete: SetNull)
   leadId         String?
-  lead           User?     @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  lead           User?       @relation("ProjectLead", fields: [leadId], references: [id], onDelete: SetNull)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   members      ProjectMember[]
   tasks        Task[]
@@ -210,6 +318,10 @@ model Project {
   transactions Transaction[]
   events       Event[]
   documents    Document[]
+  requests     Request[]
+  timeEntries  TimeEntry[]
+
+  @@index([associationId])
 }
 
 model ProjectMember {
@@ -250,30 +362,34 @@ model ProjectUpdate {
 }
 
 model Task {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
   /// TODO | IN_PROGRESS | REVIEW | DONE
-  status      String    @default("TODO")
+  status        String      @default("TODO")
   /// LOW | MEDIUM | HIGH | URGENT
-  priority    String    @default("MEDIUM")
-  dueDate     DateTime?
-  completedAt DateTime?
-  order       Int       @default(0)
-  projectId   String?
-  project     Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  poleId      String?
-  pole        Pole?     @relation(fields: [poleId], references: [id], onDelete: SetNull)
-  assigneeId  String?
-  assignee    User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  creatorId   String?
-  creator     User?     @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: SetNull)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  priority      String      @default("MEDIUM")
+  dueDate       DateTime?
+  completedAt   DateTime?
+  order         Int         @default(0)
+  projectId     String?
+  project       Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  poleId        String?
+  pole          Pole?       @relation(fields: [poleId], references: [id], onDelete: SetNull)
+  assigneeId    String?
+  assignee      User?       @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  creatorId     String?
+  creator       User?       @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  comments TaskComment[]
+  comments    TaskComment[]
+  request     Request?
+  timeEntries TimeEntry[]
 
-  @@index([status])
+  @@index([associationId, status])
   @@index([assigneeId])
   @@index([projectId])
 }
@@ -288,32 +404,71 @@ model TaskComment {
   createdAt DateTime @default(now())
 }
 
+/// A request sent to a pole ("can someone do this?"). Pole members are notified
+/// and one of them takes it: it then becomes a task assigned to them.
+model Request {
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  /// LOW | MEDIUM | HIGH | URGENT
+  priority      String      @default("MEDIUM")
+  dueDate       DateTime?
+  /// OPEN | TAKEN | DONE | CANCELLED
+  status        String      @default("OPEN")
+  /// The pole being asked
+  poleId        String
+  pole          Pole        @relation("RequestTargetPole", fields: [poleId], references: [id], onDelete: Cascade)
+  /// The pole asking (optional)
+  fromPoleId    String?
+  fromPole      Pole?       @relation("RequestSourcePole", fields: [fromPoleId], references: [id], onDelete: SetNull)
+  projectId     String?
+  project       Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  requesterId   String?
+  requester     User?       @relation("RequestRequester", fields: [requesterId], references: [id], onDelete: SetNull)
+  takenById     String?
+  takenBy       User?       @relation("RequestClaimer", fields: [takenById], references: [id], onDelete: SetNull)
+  taskId        String?     @unique
+  task          Task?       @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  takenAt       DateTime?
+  closedAt      DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([associationId, status])
+  @@index([poleId])
+}
+
 // ─── Life of the association ────────────────────────────────────────────────
 
 model Event {
-  id          String    @id @default(cuid())
-  title       String
-  description String?
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
   /// GENERAL_ASSEMBLY | BOARD_MEETING | POLE_MEETING | EVENT | WORKSHOP | OTHER
-  type        String    @default("EVENT")
-  startAt     DateTime
-  endAt       DateTime?
-  location    String?
-  agenda      String?
+  type          String      @default("EVENT")
+  startAt       DateTime
+  endAt         DateTime?
+  location      String?
+  agenda        String?
   /// Meeting minutes ("procès-verbal")
-  minutes     String?
-  poleId      String?
-  pole        Pole?     @relation(fields: [poleId], references: [id], onDelete: SetNull)
-  projectId   String?
-  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  createdById String?
-  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  minutes       String?
+  poleId        String?
+  pole          Pole?       @relation(fields: [poleId], references: [id], onDelete: SetNull)
+  projectId     String?
+  project       Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdById   String?
+  createdBy     User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  attendees EventAttendee[]
+  attendees   EventAttendee[]
+  timeEntries TimeEntry[]
 
-  @@index([startAt])
+  @@index([associationId, startAt])
 }
 
 model EventAttendee {
@@ -329,46 +484,144 @@ model EventAttendee {
 }
 
 model Announcement {
-  id        String   @id @default(cuid())
-  title     String
-  body      String
-  pinned    Boolean  @default(false)
-  authorId  String?
-  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title         String
+  body          String
+  pinned        Boolean     @default(false)
+  authorId      String?
+  author        User?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+/// A question put to the vote (board decision, choice of a date, of a name…).
+model Poll {
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  question      String
+  description   String?
+  /// Several options can be chosen
+  multiple      Boolean     @default(false)
+  /// Hide who voted for what
+  anonymous     Boolean     @default(false)
+  /// Optional: only members of this pole can vote
+  poleId        String?
+  pole          Pole?       @relation(fields: [poleId], references: [id], onDelete: SetNull)
+  closesAt      DateTime?
+  closedAt      DateTime?
+  createdById   String?
+  createdBy     User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+
+  options PollOption[]
+  votes   PollVote[]
+
+  @@index([associationId])
+}
+
+model PollOption {
+  id     String     @id @default(cuid())
+  pollId String
+  poll   Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  label  String
+  order  Int        @default(0)
+  votes  PollVote[]
+}
+
+model PollVote {
+  id        String     @id @default(cuid())
+  pollId    String
+  poll      Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId  String
+  option    PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+
+  @@unique([optionId, userId])
+  @@index([pollId, userId])
+}
+
+/// Volunteer time spent for the association.
+model TimeEntry {
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date          DateTime
+  minutes       Int
+  description   String?
+  poleId        String?
+  pole          Pole?       @relation(fields: [poleId], references: [id], onDelete: SetNull)
+  projectId     String?
+  project       Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  taskId        String?
+  task          Task?       @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  eventId       String?
+  event         Event?      @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+
+  @@index([associationId, date])
+}
+
+/// In-app notification (also sent by email when SMTP is configured).
+model Notification {
+  id            String       @id @default(cuid())
+  userId        String
+  user          User         @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  associationId String?
+  association   Association? @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  /// request.new | request.taken | request.done | task.assigned | task.comment | event.new | poll.new | announcement.new | member.joined
+  type          String
+  /// JSON with the values used to render the message (labels, names…)
+  data          String       @default("{}")
+  link          String?
+  actorId       String?
+  actor         User?        @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  readAt        DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([userId, readAt])
 }
 
 // ─── Money ──────────────────────────────────────────────────────────────────
 
 /// Money is stored in cents to avoid floating point errors.
 model Transaction {
-  id            String   @id @default(cuid())
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
   label         String
   /// INCOME | EXPENSE
   type          String
   amountCents   Int
-  category      String   @default("OTHER")
+  category      String      @default("OTHER")
   date          DateTime
   paymentMethod String?
   reference     String?
   notes         String?
   projectId     String?
-  project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project       Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
   poleId        String?
-  pole          Pole?    @relation(fields: [poleId], references: [id], onDelete: SetNull)
+  pole          Pole?       @relation(fields: [poleId], references: [id], onDelete: SetNull)
   recordedById  String?
-  recordedBy    User?    @relation(fields: [recordedById], references: [id], onDelete: SetNull)
-  membership    Membership?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  recordedBy    User?       @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+  dues          Dues?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  @@index([date])
+  @@index([associationId, date])
 }
 
-/// Yearly membership fee ("cotisation") of a member.
-model Membership {
+/// Yearly membership fee ("cotisation") paid by a member.
+model Dues {
   id            String       @id @default(cuid())
+  associationId String
+  association   Association  @relation(fields: [associationId], references: [id], onDelete: Cascade)
   userId        String
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   year          Int
@@ -379,44 +632,48 @@ model Membership {
   transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
   createdAt     DateTime     @default(now())
 
-  @@unique([userId, year])
+  @@unique([associationId, userId, year])
 }
 
 // ─── Knowledge ──────────────────────────────────────────────────────────────
 
 model Document {
-  id           String   @id @default(cuid())
-  title        String
-  description  String?
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
   /// STATUTES | RULES | MINUTES | FINANCE | LEGAL | COMMUNICATION | GUIDE | OTHER
-  category     String   @default("OTHER")
-  url          String?
-  fileName     String?
-  storedName   String?
-  mimeType     String?
-  sizeBytes    Int?
-  poleId       String?
-  pole         Pole?    @relation(fields: [poleId], references: [id], onDelete: SetNull)
-  projectId    String?
-  project      Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  uploadedById String?
-  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  category      String      @default("OTHER")
+  url           String?
+  fileName      String?
+  storedName    String?
+  mimeType      String?
+  sizeBytes     Int?
+  poleId        String?
+  pole          Pole?       @relation(fields: [poleId], references: [id], onDelete: SetNull)
+  projectId     String?
+  project       Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  uploadedById  String?
+  uploadedBy    User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
 
 /// Audit trail shown in the activity feed.
 model Activity {
-  id          String   @id @default(cuid())
+  id            String      @id @default(cuid())
+  associationId String
+  association   Association @relation(fields: [associationId], references: [id], onDelete: Cascade)
   /// created | updated | deleted | completed | joined | commented | …
-  action      String
+  action        String
   /// task | project | pole | member | event | …
-  entityType  String
-  entityId    String?
-  entityLabel String?
-  actorId     String?
-  actor       User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  createdAt   DateTime @default(now())
+  entityType    String
+  entityId      String?
+  entityLabel   String?
+  actorId       String?
+  actor         User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now())
 
-  @@index([createdAt])
+  @@index([associationId, createdAt])
 }

@@ -13,13 +13,14 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import { db } from "@/lib/db";
-import { requireUser } from "@/lib/auth";
+import { requireContext } from "@/lib/context";
 import { getI18n } from "@/lib/i18n/server";
 import { can } from "@/lib/permissions";
-import { getAssociation } from "@/lib/queries";
 import { loadProjects } from "@/lib/project-queries";
 import { loadTaskCards } from "@/lib/task-queries";
+import { loadRequests } from "@/lib/request-queries";
+import { myPoleIds } from "@/lib/queries";
+import { RequestCard } from "@/components/requests/request-card";
 import { foundationProgress } from "@/lib/progress";
 import { colorFor } from "@/lib/colors";
 import { formatDate, formatMoney, formatRelative, formatTime, nowWall, startOfDayUTC } from "@/lib/utils";
@@ -39,49 +40,44 @@ import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { AnnouncementFields } from "@/components/dashboard/announcement-fields";
 
 export default async function DashboardPage() {
-  const user = await requireUser();
+  const { user, db, association } = await requireContext();
   const { t, locale } = await getI18n();
   const now = nowWall();
   const today = startOfDayUTC(now);
+  const poleIds = await myPoleIds(db, user.id);
+  const requestsForMe = await loadRequests(
+    db,
+    { status: "OPEN", poleId: { in: poleIds }, requesterId: { not: user.id } },
+    user,
+    4,
+  );
 
-  const [
-    association,
-    myTasks,
-    projects,
-    events,
-    announcements,
-    activity,
-    steps,
-    memberCount,
-    openTasks,
-    overdue,
-    totals,
-  ] = await Promise.all([
-    getAssociation(),
-    loadTaskCards({ assigneeId: user.id, status: { not: "DONE" } }, user),
-    loadProjects({ status: "IN_PROGRESS" }),
-    db.event.findMany({
-      where: { startAt: { gte: today } },
-      orderBy: { startAt: "asc" },
-      take: 4,
-      include: { attendees: { where: { userId: user.id }, select: { status: true } } },
-    }),
-    db.announcement.findMany({
-      orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
-      take: 4,
-      include: { author: { select: { name: true } } },
-    }),
-    db.activity.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 8,
-      include: { actor: { select: { id: true, name: true, avatarColor: true } } },
-    }),
-    db.foundationStep.findMany({ orderBy: { order: "asc" }, select: { id: true, title: true, status: true } }),
-    db.user.count({ where: { status: "ACTIVE" } }),
-    db.task.count({ where: { status: { not: "DONE" } } }),
-    db.task.count({ where: { status: { not: "DONE" }, dueDate: { lt: today } } }),
-    db.transaction.groupBy({ by: ["type"], _sum: { amountCents: true } }),
-  ]);
+  const [myTasks, projects, events, announcements, activity, steps, memberCount, openTasks, overdue, totals] =
+    await Promise.all([
+      loadTaskCards(db, { assigneeId: user.id, status: { not: "DONE" } }, user),
+      loadProjects(db, { status: "IN_PROGRESS" }),
+      db.event.findMany({
+        where: { startAt: { gte: today } },
+        orderBy: { startAt: "asc" },
+        take: 4,
+        include: { attendees: { where: { userId: user.id }, select: { status: true } } },
+      }),
+      db.announcement.findMany({
+        orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
+        take: 4,
+        include: { author: { select: { name: true } } },
+      }),
+      db.activity.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 8,
+        include: { actor: { select: { id: true, name: true, avatarColor: true } } },
+      }),
+      db.foundationStep.findMany({ orderBy: { order: "asc" }, select: { id: true, title: true, status: true } }),
+      db.member.count({ where: { status: "ACTIVE" } }),
+      db.task.count({ where: { status: { not: "DONE" } } }),
+      db.task.count({ where: { status: { not: "DONE" }, dueDate: { lt: today } } }),
+      db.transaction.groupBy({ by: ["type"], _sum: { amountCents: true } }),
+    ]);
 
   const hour = new Date().getHours();
   const firstName = user.name.split(" ")[0];
@@ -189,6 +185,25 @@ export default async function DashboardPage() {
               <TaskTable tasks={myTasks.slice(0, 7)} />
             )}
           </section>
+
+          {requestsForMe.length > 0 && (
+            <section>
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-[15px] font-semibold">
+                  {t.dashboard.requestsForYou}{" "}
+                  <span className="font-normal text-muted-foreground">{requestsForMe.length}</span>
+                </h2>
+                <Link href="/requests" className="text-sm text-primary hover:underline">
+                  {t.common.viewAll}
+                </Link>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                {requestsForMe.map((r) => (
+                  <RequestCard key={r.id} request={r} compact />
+                ))}
+              </div>
+            </section>
+          )}
 
           <Card>
             <CardHeader>

@@ -1,16 +1,20 @@
 import "server-only";
-import { db } from "./db";
+import type { TenantDb } from "./tenant";
 
-export async function logActivity(input: {
-  actorId: string | null;
-  action: string;
-  entityType: string;
-  entityId?: string | null;
-  entityLabel?: string | null;
-}) {
+export async function logActivity(
+  ctx: { db: TenantDb; association: { id: string } },
+  input: {
+    actorId: string | null;
+    action: string;
+    entityType: string;
+    entityId?: string | null;
+    entityLabel?: string | null;
+  },
+) {
   try {
-    await db.activity.create({
+    await ctx.db.activity.create({
       data: {
+        associationId: ctx.association.id,
         actorId: input.actorId,
         action: input.action,
         entityType: input.entityType,

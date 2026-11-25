@@ -1,6 +1,6 @@
 "use client";
 
-import { FormGrid, SelectField, TextAreaField, TextField } from "@/components/forms/fields";
+import { CheckboxField, FormGrid, SelectField, TextAreaField, TextField } from "@/components/forms/fields";
 import { useT } from "@/lib/i18n/client";
 import { EVENT_TYPES } from "@/lib/constants";
 import { toDateTimeInput } from "@/lib/utils";
@@ -19,7 +19,17 @@ export type EventValues = {
   projectId?: string | null;
 };
 
-export function EventFields({ event, poles, projects }: { event?: EventValues; poles: Opt[]; projects: Opt[] }) {
+export function EventFields({
+  event,
+  poles,
+  projects,
+  isNew,
+}: {
+  event?: EventValues;
+  poles: Opt[];
+  projects: Opt[];
+  isNew?: boolean;
+}) {
   const t = useT();
   return (
     <>
@@ -76,6 +86,7 @@ export function EventFields({ event, poles, projects }: { event?: EventValues; p
         rows={4}
         optional
       />
+      {isNew && <CheckboxField name="notify" defaultChecked label={t.events.notifyMembers} />}
     </>
   );
 }

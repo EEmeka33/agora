@@ -157,3 +157,27 @@ export function pct(part: number, total: number) {
 export function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
 }
+
+/** "1h30", "1h", "90min", "45m", "1:30", "2.5", "2,5" → minutes (null if invalid or > 24h). */
+export function parseDuration(input: unknown): number | null {
+  const raw = String(input ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(",", ".")
+    .replace(/\s+/g, "");
+  if (!raw) return null;
+  let minutes: number | null = null;
+  let m: RegExpMatchArray | null;
+  if ((m = raw.match(/^(\d+(?:\.\d+)?)h(?:(\d{1,2})(?:m|min)?)?$/))) minutes = Number(m[1]) * 60 + Number(m[2] ?? 0);
+  else if ((m = raw.match(/^(\d+)(?:m|min|mn)$/))) minutes = Number(m[1]);
+  else if ((m = raw.match(/^(\d+):(\d{2})$/))) minutes = Number(m[1]) * 60 + Number(m[2]);
+  else if ((m = raw.match(/^\d+(?:\.\d+)?$/))) minutes = Number(raw) * 60;
+  if (minutes === null || !Number.isFinite(minutes)) return null;
+  minutes = Math.round(minutes);
+  return minutes > 0 && minutes <= 24 * 60 ? minutes : null;
+}
+
+/** 90 → "1.5" (hours, one decimal at most) */
+export function minutesToHours(minutes: number, locale = "en") {
+  return new Intl.NumberFormat(locale === "fr" ? "fr-FR" : "en-GB", { maximumFractionDigits: 1 }).format(minutes / 60);
+}
